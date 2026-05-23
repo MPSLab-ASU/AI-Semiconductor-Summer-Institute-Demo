@@ -1,0 +1,50 @@
+# Face Recognition Configuration File
+
+# Camera Settings
+camera:
+  device_id: 0  # Default camera device (0 for built-in, can be changed for USB cameras)
+  width: 640    # Frame width
+  height: 480   # Frame height
+  fps: 30       # Frames per second
+
+# Face Detection Settings
+face_detection:
+  method: "haar"  # Options: "haar", "dnn", "dlib"
+  # Haar Cascade settings
+  haar_cascade_path: "haarcascade_frontalface_default.xml"  # OpenCV provides this
+  scale_factor: 1.1
+  min_neighbors: 5
+  min_size: [30, 30]
+  
+  # DNN-based detection settings (if method is "dnn")
+  dnn_model_path: "models/face_detection/deploy.prototxt"
+  dnn_weights_path: "models/face_detection/res10_300x300_ssd_iter_140000.caffemodel"
+  confidence_threshold: 0.5
+
+# Face Recognition Settings
+face_recognition:
+  model_path: "models/face_embedding_model"  # Custom TF-TRT SavedModel directory
+  embedding_size: 128  # Size of face embeddings
+  similarity_threshold: 0.6  # Threshold for face matching (cosine similarity)
+  database_path: "data/face_database.pkl"  # Path to store known face embeddings
+
+# GPU Settings
+gpu:
+  enabled: true  # Enable GPU acceleration
+  memory_growth: true  # Allow TensorFlow to allocate GPU memory as needed
+  device_id: 0  # GPU device ID (for multi-GPU systems)
+
+# Display Settings
+display:
+  show_fps: true
+  show_confidence: true
+  bbox_color: [0, 255, 0]  # Green bounding box (BGR format)
+  text_color: [255, 255, 255]  # White text
+  font_scale: 0.6
+  thickness: 2
+
+# Performance Settings
+performance:
+  skip_frames: 0  # Process every nth frame (0 = process all frames)
+  resize_for_detection: true  # Resize frame for faster detection
+  detection_size: [320, 240]  # Size for detection processing
