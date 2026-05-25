@@ -60,12 +60,31 @@ Negative (N) ────▶│  (Shared Brain) │────▶ f(N) ──�
 
 In this section, we will load a dataset of celebrity faces (Labeled Faces in the Wild - LFW), set up a Siamese training pipeline, and train our model.
 
-### ⚡ Understanding Computational Costs
-Training a model from scratch is computationally expensive. Here is why we use **Transfer Learning** and how we control computational costs:
+### 🧮 The Math of Training: Memory & MAC Analysis
 
-*   **Model Parameter Size**: A model's size is determined by its parameters (weights and biases). A large model like ResNet-50 has over $25$ million parameters. Our backbone, **MobileNetV2**, has only **$2.2$ million parameters**—making it roughly $10\times$ smaller and ideal for local edge hardware!
-*   **Transfer Learning**: Instead of starting with a blank network, we use a MobileNetV2 backbone pre-trained on ImageNet (a massive dataset of 1.2 million general images). It already knows how to detect edges, curves, and textures.
-*   **Freezing Weights**: By setting `trainable = False` on the backbone, we "freeze" those 2.2 million parameters. During training, we only compute mathematical adjustments (gradients) for our final face embedding layer (only about $160,000$ parameters). This cuts training time on a typical computer from hours to just a couple of minutes!
+Before writing code, we must understand the immense computational scale of training a model compared to merely running it (inference). Let's calculate the computational cost based on Image Size, Batch Size, Dataset Size, and Epochs, including the hidden cost of Backpropagation.
+
+#### 1. The MAC Cost of Training
+At the silicon level, the core operation is a **MAC (Multiply and Accumulate)**: $a \times b + c$. For a standard MobileNetV2 model processing a 224x224 image:
+*   **Forward Pass:** ~300 Million MACs per image.
+*   **Backward Pass (Backprop):** Calculating gradients and updating weights typically costs about **2x** the forward pass, adding ~600 Million MACs per image.
+*   **Total per Image:** ~900 Million MACs.
+
+Now, let's scale this up to a full training run:
+*   **1 Batch (e.g., 32 images):** $32 \text{ images} \times 900\text{M} = \mathbf{28.8 \text{ Billion MACs}}$
+*   **1 Epoch (e.g., 1,000 images):** $1,000 \text{ images} \times 900\text{M} = \mathbf{900 \text{ Billion MACs}}$
+*   **Full Training (e.g., 50 Epochs):** $50 \times 900\text{B} = \mathbf{45 \text{ Trillion MACs!}}$
+
+*(Note on Siamese Networks: Because our training uses Triplets (Anchor, Positive, Negative), we process **3 images** for every single training step, effectively tripling the forward pass cost!)*
+
+#### 2. The Memory Cost of Training
+Training isn't just mathematically heavier; it is incredibly memory-hungry. During the forward pass of training, the computer must **save all intermediate mathematical activations** in RAM so it can use them later during the backward pass to calculate gradients. If your batch size is 32, you must store the intermediate states for all 32 images simultaneously. This easily consumes several Gigabytes of memory, which is why training often causes "Out of Memory" (OOM) crashes on laptops!
+
+#### 3. Our Solution: Transfer Learning (Freezing Weights)
+Performing 45+ Trillion MACs from scratch requires massive data centers. Here is how we make it run on your laptop:
+*   **Pre-trained Weights:** We load a MobileNetV2 backbone (2.2 million parameters) that has already been trained on 1.2 million images.
+*   **Freezing:** By setting `trainable = False`, we freeze the backbone. **This completely eliminates the backward pass (backprop) for those 2.2 million parameters!** 
+*   **The Result:** We only perform the forward pass (300M MACs) and compute gradients for our tiny custom embedding layer (~160,000 parameters). This cuts training time from days to just a few minutes, bypassing massive memory and MAC bottlenecks.
 
 ---
 
@@ -287,6 +306,21 @@ Once a model is trained, we need to run it in real-time on your local laptop. Th
 *   **Privacy**: Facial data never leaves the device. If you use this for student attendance, no biometric data is sent to the cloud.
 *   **Zero Latency**: Real-time video processing requires processing 30 frames per second (about 33ms per frame). Round trips to a cloud server are too slow!
 *   **No Internet Required**: The system works in remote school sites, basements, or during network outages.
+
+### 🧮 The Math of Inference: Memory & MAC Analysis
+Now that we've seen the massive MAC and memory costs of *training* (Trillions of MACs and Gigabytes of VRAM), let's break down the cost of *inference* (running the model on a single camera frame).
+
+**1. MAC Analysis (Computational Cost)**
+For every face detected, the inference pipeline has two stages:
+*   **Neural Network Run:** Pushing a 224x224 image through MobileNetV2 to generate the 128-D embedding vector requires exactly **1 Forward Pass** (~300 Million MACs). There is no backpropagation during inference!
+*   **Vector Comparison:** Comparing the new 128-D vector to a known student's vector using cosine similarity requires exactly **128 MACs**. For a database of $N$ students, the cost is $128 \times N$ MACs.
+
+**2. Memory Analysis (RAM/VRAM Cost)**
+*   Unlike training, which must store all intermediate activations across a whole batch to compute gradients, inference only processes **1 frame at a time (Batch Size = 1)**.
+*   Furthermore, the computer can instantly discard layer $L$'s activations as soon as layer $L+1$ is calculated. This drops memory requirements from Gigabytes down to just a few Megabytes!
+
+**The Hardware Insight:**
+The neural network extraction (~300 Million MACs) completely dwarfs the database search (e.g., just $1.28$ Million MACs for 10,000 students). This perfectly illustrates why we need an NPU or GPU for the network, while the CPU easily handles the database math. Meanwhile, the incredibly low memory footprint of inference is what allows this application to run smoothly on edge devices and standard laptops!
 
 ### 🏎️ Software Optimizations (Translation & Compression)
 Standard neural network models are saved in formats designed for editing and training (like Keras `.keras` or TensorFlow SavedModel). To run them quickly on edge hardware, we translate and optimize them:
