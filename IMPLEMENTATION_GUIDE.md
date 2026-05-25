@@ -308,21 +308,22 @@ Computers represent neural network weights as 32-bit floats (FP32).
 
 ---
 
-### 🧠 Hardware Architectures: CPU vs. GPU
+### 🧠 Hardware Architectures: CPU vs. GPU vs. NPU
 Understanding the hardware architecture makes these software optimizations click:
 
-| Metric | CPU (Central Processing Unit) | GPU (Graphics Processing Unit) |
-|---|---|---|
-| **Core Count** | Few cores ($4$ to $16$) | Thousands of tiny cores ($128$ to $3000+$) |
-| **Core Speed** | Very fast clock speed (sequential tasks) | Slower clock speed (parallel tasks) |
-| **Execution** | Processes instructions step-by-step | Processes thousands of operations at once |
-| **Best Used For** | Running the OS, file operations, web servers | Matrix multiplications (images, neural networks) |
+| Metric | CPU (Central Processing Unit) | GPU (Graphics Processing Unit) | NPU (Neural Processing Unit) |
+|---|---|---|---|
+| **Core Count** | Few cores ($4$ to $16$) | Thousands of tiny cores ($128$ to $3000+$) | Dedicated Matrix Multiply blocks (Systolic Arrays) |
+| **Core Speed** | Very fast clock speed (sequential tasks) | Slower clock speed (parallel tasks) | Extremely fast at specific math (MAC operations) |
+| **Execution** | Processes instructions step-by-step | Processes thousands of general operations at once | Continuous data flow (passes data directly between calculators) |
+| **Best Used For** | Running the OS, file operations, web servers | Graphics, video editing, training AI models | Running AI inference (like face recognition) at very low power |
 
-#### 💡 The Edge Advantage: NPU vs. GPU vs. CPU
+#### 💡 The Edge Advantage: How an NPU works
 When deploying AI locally on laptops, the silicon you target drastically affects computational complexity and performance:
 1. **CPU (Fallback):** Handles sequential tasks well but is slow for the massive parallel mathematical operations required by neural networks.
 2. **Dedicated GPU:** Excellent for parallel matrix operations, but uses high power. Often, moving camera frame data from System RAM to GPU RAM over the PCIe bus creates a bottleneck.
-3. **NPU (Neural Processing Unit) or Integrated GPU with UMA:** Modern laptops (like Apple Silicon or new Intel/AMD chips) feature NPUs or a **Unified Memory Architecture (UMA)** where the CPU and hardware accelerators share the same physical memory. This allows the silicon to instantly read the camera frame without copying data, drastically increasing inference frame rates while keeping power consumption low!
+3. **NPU (Neural Processing Unit):** Modern laptops (like Apple Silicon, Snapdragon X, or new Intel Core Ultra/AMD Ryzen AI chips) feature NPUs. While a GPU is a "jack of all trades" for parallel tasks, an NPU is **hardwired specifically for the math of neural networks** (Multiply-Accumulate operations). Instead of reading data from memory for every single calculation, an NPU uses a "systolic array"—a grid where data flows directly from one calculator to the next like an assembly line. This allows NPUs to run AI models incredibly fast while sipping a fraction of the power of a GPU, saving laptop battery life.
+4. **Unified Memory Architecture (UMA):** Many of these modern chips also share the same physical memory between the CPU, GPU, and NPU. This allows the NPU to instantly read the camera frame without copying data across a slow bus, drastically increasing inference frame rates!
 
 ---
 
