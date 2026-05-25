@@ -460,12 +460,18 @@ We search our database of known teachers/students to find a match.
 
 When testing your final implementations:
 1.  **Run the local component tests**:
+    This will verify that your camera, dependencies, and hardware accelerators (NPU/GPU) are correctly detected:
     ```bash
     python3 examples/test_components.py
     ```
-2.  **Verify NPU/GPU recognition speed**:
+2.  **Start the Streamlit Application**:
+    Launch the web interface to test the real-time inference:
+    ```bash
+    streamlit run src/face_recognition_app.py
+    ```
+3.  **Verify NPU/GPU recognition speed**:
     Open your laptop's task manager (Activity Monitor on Mac, Task Manager on Windows) to monitor your silicon's utilization. Verify that your NPU or GPU utilization spikes when running the Streamlit face recognition app, showing that the hardware accelerator is active!
-3.  **Tune the threshold**:
+4.  **Tune the threshold**:
     If the system calls a teacher by another teacher's name, increase `similarity_threshold` in `config/config.yaml` to make matching stricter (e.g., to `0.70`). If it fails to recognize known faces, lower it slightly (e.g., to `0.55`).
 
 ***

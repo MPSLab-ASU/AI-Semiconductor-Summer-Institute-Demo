@@ -39,28 +39,25 @@ def test_imports():
         return False
 
 
-def test_gpu():
-    """Test GPU configuration"""
-    logger.info("\nTesting GPU configuration...")
+def test_hardware_accelerator():
+    """Test Hardware Accelerator (GPU/NPU) configuration"""
+    logger.info("\nTesting Hardware Accelerator (GPU/NPU) configuration...")
     
     try:
-        from face_recognition.utils.gpu_utils import get_gpu_info, check_jetson_nano
-        
-        is_jetson = check_jetson_nano()
-        logger.info(f"Running on Jetson: {is_jetson}")
+        from face_recognition.utils.gpu_utils import get_gpu_info
         
         gpu_info = get_gpu_info()
-        logger.info(f"GPU Available: {gpu_info['available']}")
-        logger.info(f"GPU Count: {gpu_info['count']}")
+        logger.info(f"Accelerator Available: {gpu_info['available']}")
+        logger.info(f"Accelerator Count: {gpu_info['count']}")
         
         if gpu_info['available']:
-            logger.info("✓ GPU detected and available")
+            logger.info("✓ Hardware Accelerator (GPU/NPU) detected and available")
         else:
-            logger.warning("⚠ No GPU detected, will run on CPU")
+            logger.warning("⚠ No Hardware Accelerator detected, will run on CPU fallback")
         
         return True
     except Exception as e:
-        logger.error(f"✗ GPU test failed: {e}")
+        logger.error(f"✗ Hardware Accelerator test failed: {e}")
         return False
 
 
@@ -149,7 +146,7 @@ def run_all_tests():
     
     tests = [
         ("Imports", test_imports),
-        ("GPU", test_gpu),
+        ("Hardware Accelerator", test_hardware_accelerator),
         ("Camera", test_camera),
         ("Face Detector", test_face_detector),
         ("Configuration", test_configuration),
