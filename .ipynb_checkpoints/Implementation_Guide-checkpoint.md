@@ -1,14 +1,8 @@
 # 🎓 Teacher's Implementation Guide: Edge AI & Face Recognition
 
-Welcome to the **ASU AI Semiconductor Summer Institute** Face Recognition Lab! 🚀 (https://sites.google.com/asu.edu/ai-semi-institute/home)
+Welcome to the **ASU AI Semi Institute** Face Recognition Lab! 🚀 
 
-This guide is designed specifically for school teachers for the Day 2 and Day 3 sessions. The core focus of this guide is to understand **AI and its relationship to computational complexity and silicon**. By the end of this lab, you will build a practical face recognition application that you can use in your daily job!
-
-The demo consists of two main parts:
-1. **Model Training**, contained entirely within a single Jupyter Notebook.
-2. **Local Deployment**, which runs as an easy-to-use Streamlit web application.
-
-You will build and train a neural network that runs entirely on local laptops, ideally targeting an NPU (Neural Processing Unit) or GPU for acceleration, with the CPU acting as a fallback. You will not rely on cloud servers or the internet, ensuring privacy and speed.
+This guide is designed for high school teachers to implement a state-of-the-art, local face recognition system. You will build and train a neural network that runs entirely on local hardware, without relying on cloud servers or the internet.
 
 ---
 
@@ -56,7 +50,8 @@ Negative (N) ────▶│  (Shared Brain) │────▶ f(N) ──�
 ---
 
 ## 💻 Part 1: Model Training & Computational Costs
-📂 **Training Notebook**: `training/train_facenet_template.ipynb`
+📂 **Template File**: `training/train_facenet_template.ipynb`  
+📂 **Coded Solution**: `training/train_facenet.ipynb`
 
 In this section, we will load a dataset of celebrity faces (Labeled Faces in the Wild - LFW), set up a Siamese training pipeline, and train our model.
 
@@ -278,10 +273,10 @@ We measure how well-separated our clusters are using a Nearest-Neighbor classifi
 ---
 
 ## 🔌 Part 2: Local Deployment & Hardware Acceleration
-📂 **Deployment**: Streamlit Web App
-📂 **Coded Solution**: `src/face_recognition_app.py`
+📂 **Template File**: `src/face_recognition/face_recognizer_template.py`  
+📂 **Coded Solution**: `src/face_recognition/face_recognizer.py`
 
-Once a model is trained, we need to run it in real-time on your local laptop. This phase is called **inference**.
+Once a model is trained, we need to run it in real-time on local hardware (like an NVIDIA Jetson Nano or local computer). This phase is called **inference**.
 
 ### ⚙️ Why Run Locally?
 *   **Privacy**: Facial data never leaves the device. If you use this for student attendance, no biometric data is sent to the cloud.
@@ -318,11 +313,13 @@ Understanding the hardware architecture makes these software optimizations click
 | **Execution** | Processes instructions step-by-step | Processes thousands of operations at once |
 | **Best Used For** | Running the OS, file operations, web servers | Matrix multiplications (images, neural networks) |
 
-#### 💡 The Edge Advantage: NPU vs. GPU vs. CPU
-When deploying AI locally on laptops, the silicon you target drastically affects computational complexity and performance:
-1. **CPU (Fallback):** Handles sequential tasks well but is slow for the massive parallel mathematical operations required by neural networks.
-2. **Dedicated GPU:** Excellent for parallel matrix operations, but uses high power. Often, moving camera frame data from System RAM to GPU RAM over the PCIe bus creates a bottleneck.
-3. **NPU (Neural Processing Unit) or Integrated GPU with UMA:** Modern laptops (like Apple Silicon or new Intel/AMD chips) feature NPUs or a **Unified Memory Architecture (UMA)** where the CPU and hardware accelerators share the same physical memory. This allows the silicon to instantly read the camera frame without copying data, drastically increasing inference frame rates while keeping power consumption low!
+#### 💡 Unified Memory (The Jetson Advantage)
+On standard computers, the CPU and GPU have separate RAM blocks. When processing a camera frame:
+1. The CPU reads the frame from the camera into System RAM.
+2. The CPU copies the frame over a slow bus (PCIe) to GPU RAM.
+3. The GPU runs the model and copies the results back to System RAM.
+
+This copying process is a massive bottleneck. The **NVIDIA Jetson Nano** uses a **Unified Memory Architecture (UMA)** where the CPU and GPU share the exact same physical memory block. This allows the GPU to instantly read the camera frame without copying any data, drastically increasing frame rates!
 
 ---
 
@@ -463,8 +460,8 @@ When testing your final implementations:
     ```bash
     python3 examples/test_components.py
     ```
-2.  **Verify NPU/GPU recognition speed**:
-    Open your laptop's task manager (Activity Monitor on Mac, Task Manager on Windows) to monitor your silicon's utilization. Verify that your NPU or GPU utilization spikes when running the Streamlit face recognition app, showing that the hardware accelerator is active!
+2.  **Verify GPU recognition speed**:
+    Open a terminal and run `tegrastats` on the Jetson Nano. Verify that GPU utilization spikes when running face recognition, showing that the hardware accelerator is active!
 3.  **Tune the threshold**:
     If the system calls a teacher by another teacher's name, increase `similarity_threshold` in `config/config.yaml` to make matching stricter (e.g., to `0.70`). If it fails to recognize known faces, lower it slightly (e.g., to `0.55`).
 
