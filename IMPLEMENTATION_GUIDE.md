@@ -60,35 +60,51 @@ Negative (N) ────▶│  (Shared Brain) │────▶ f(N) ──�
 
 In this section, we will load a dataset of celebrity faces (Labeled Faces in the Wild - LFW), set up a Siamese training pipeline, and train our model.
 
-### 🧮 The Math of Training: Memory & MAC Analysis
+### 🧮 The Math of Training: Multiplications, Additions, and Memory
 
-Before writing code, we must understand the immense computational scale of training a model compared to merely running it (inference). Let's calculate the computational cost based on Image Size, Batch Size, Dataset Size, and Epochs, including the hidden cost of Backpropagation.
+Before writing code, we must understand the immense scale of mathematical calculations needed to train a model compared to merely running it (inference). Let's calculate the computational cost based on Image Size, Batch Size, Dataset Size, and Epochs (rounds of training).
 
-#### 1. The MAC Cost of Training
-At the silicon level, the core operation is a **MAC (Multiply and Accumulate)**: $a \times b + c$. For a standard MobileNetV2 model processing a 224x224 image:
-*   **Forward Pass:** ~300 Million MACs per image.
-*   **Backward Pass (Backprop):** Calculating gradients and updating weights typically costs about **2x** the forward pass, adding ~600 Million MACs per image.
-*   **Total per Image:** ~900 Million MACs.
+#### 1. The Math Calculations (Multiplications & Additions)
+At the computer chip level, every operation is a simple combination of **multiplication and addition** (e.g., $a \times b + c$, sometimes called a Multiply-Accumulate or MAC operation). For a standard model processing a single 224x224x3 image (a color image of width = height = 224 pixels) :
+*   **The Guessing Phase (Forward Pass):** The model takes an image and makes a prediction. This requires about **300 Million** multiplications and additions.
+*   **The Learning Phase (Backward Pass):** The model checks if its guess was right, calculates its mistakes, and goes backward to adjust its internal settings. This "learning backward" process is much harder, costing about **2x** the guessing phase, adding **600 Million** multiplications and additions.
+*   **Total per Image:** **900 Million** multiplications and additions!
 
-Now, let's scale this up to a full training run:
-*   **1 Batch (e.g., 32 images):** $32 \text{ images} \times 900\text{M} = \mathbf{28.8 \text{ Billion MACs}}$
-*   **1 Epoch (e.g., 1,000 images):** $1,000 \text{ images} \times 900\text{M} = \mathbf{900 \text{ Billion MACs}}$
-*   **Full Training (e.g., 50 Epochs):** $50 \times 900\text{B} = \mathbf{45 \text{ Trillion MACs!}}$
+Now, let's scale this up to a full training session:
+*   **1 Batch (e.g., 32 images processed together):** $32 \text{ images} \times 900\text{ Million} = \mathbf{28.8 \text{ Billion}}$ multiplications and additions.
+*   **1 Epoch (e.g., 1,000 images):** $1,000 \text{ images} \times 900\text{ Million} = \mathbf{900 \text{ Billion}}$ multiplications and additions.
+*   **Full Training (e.g., 50 rounds/epochs):** $50 \text{ rounds} \times 900\text{ Billion} = \mathbf{45 \text{ Trillion}}$ multiplications and additions!
 
-*(Note on Siamese Networks: Because our training uses Triplets (Anchor, Positive, Negative), we process **3 images** for every single training step, effectively tripling the forward pass cost!)*
+*(Note on Siamese Networks: Because our training uses Triplets (Anchor, Positive, Negative), we process **3 images** for every single training step, effectively tripling the guessing phase cost!)*
 
-#### 2. The Memory Cost of Training
-Training isn't just mathematically heavier; it is incredibly memory-hungry. During the forward pass of training, the computer must **save all intermediate mathematical activations** in RAM so it can use them later during the backward pass to calculate gradients. If your batch size is 32, you must store the intermediate states for all 32 images simultaneously. This easily consumes several Gigabytes of memory, which is why training often causes "Out of Memory" (OOM) crashes on laptops!
+#### 2. The Memory Cost: The "Scratchpad" Analogy
+Training isn't just mathematically heavy; it is incredibly memory-hungry. Why?
 
-#### 3. Our Solution: Transfer Learning (Freezing Weights)
-Performing 45+ Trillion MACs from scratch requires massive data centers. Here is how we make it run on your laptop:
-*   **Pre-trained Weights:** We load a MobileNetV2 backbone (2.2 million parameters) that has already been trained on 1.2 million images.
-*   **Freezing:** By setting `trainable = False`, we freeze the backbone. **This completely eliminates the backward pass (backprop) for those 2.2 million parameters!** 
-*   **The Result:** We only perform the forward pass (300M MACs) and compute gradients for our tiny custom embedding layer (~160,000 parameters). This cuts training time from days to just a few minutes, bypassing massive memory and MAC bottlenecks.
+> 📝 **The Scratchpad Analogy**: 
+> Imagine you are solving a massive, multi-step math problem. 
+> - **Running the model (Inference)** is like using a calculator to get a final result. You only need to remember the current number on the screen. As soon as you perform the next step, you can discard the previous one. This requires almost no memory (RAM).
+> - **Training (Learning)** is like taking a test where you **must show all your work**. To figure out where you made a mistake at the very end and fix it, you must keep every single line of intermediate calculations written down on a scratchpad. 
+> 
+> If you have a batch size of 32, it's like keeping the step-by-step scratchpads of 32 students active at the exact same time. This takes up a huge amount of table space (RAM/Memory). If you run out of table space, the computer crashes with an "Out of Memory" (OOM) error!
+
+#### 3. Our Solution: Transfer Learning (Freezing the Brain)
+Performing 45+ Trillion calculations from scratch would take days on a standard laptop. Here is how we make it run in minutes:
+*   **Pre-trained Brain:** We load a MobileNetV2 model that has already been trained on 1.2 million images. It already has 2.2 million pre-tuned parameters (settings).
+*   **Freezing:** By setting `trainable = False`, we lock these 2.2 million parameters. **This completely eliminates the need to calculate adjustments (the 600 Million backward-pass calculations) for this large part of the model!**
+*   **The Result:** We only perform the guessing phase (300 Million calculations) and only calculate adjustments for our tiny, custom face-matching layer (~160,000 parameters). This slashes training time from days to just a few minutes, bypassing memory and calculation bottlenecks.
 
 ---
 
 ### 📝 Step-by-Step Implementation Guide & Code Scaffolds (Part 1)
+
+#### **Section 1: Setup Environment**
+Before starting the notebook TODOs, confirm that the lab environment is ready.
+
+*   Install the tested Python dependencies from `requirements.txt`.
+*   Run the component tests (`python3 examples/test_components.py`) before editing the notebook.
+*   Open `training/train_facenet_template.ipynb` and run the setup cell to import TensorFlow, Keras, NumPy, Matplotlib, and scikit-learn.
+
+---
 
 #### **Section 2: Load & Preprocess Dataset**
 We fetch the images and need to format them for MobileNetV2.
@@ -96,7 +112,7 @@ We fetch the images and need to format them for MobileNetV2.
 > [!NOTE]
 > We will gloss over the data loader, but remember: the neural network expects float inputs rather than integers, and images must be resized to a uniform dimension.
 
-##### **TODO 5a: Normalise X**
+##### **TODO 1a: Normalise X**
 *   **The Logic**: Raw pixel values are integers in the range `[0, 255]`. Neural networks converge faster and are more stable when inputs are scaled to floating point numbers in `[0.0, 1.0]`.
 *   **Code Scaffold**:
     ```python
@@ -106,7 +122,7 @@ We fetch the images and need to format them for MobileNetV2.
     *   Cast the numpy array `X` to `"float32"` using the `.astype()` method.
     *   Divide the resulting array by `255.0`.
 
-##### **TODO 5b: Resize to 224x224**
+##### **TODO 1b: Resize to 224x224**
 *   **The Logic**: MobileNetV2's convolutional layers are hardwired to process images of a specific resolution (224x224). Passing any other size will crash the model.
 *   **Code Scaffold**:
     ```python
@@ -123,7 +139,7 @@ We fetch the images and need to format them for MobileNetV2.
 #### **Section 3: Triplet Sampling**
 We must group images into triplets (Anchor, Positive, Negative) to feed the Siamese network.
 
-##### **TODO 6a: Pick Anchor and Positive Indices**
+##### **TODO 2a: Pick Anchor and Positive Indices**
 *   **The Logic**: You have `label_indices`, which lists the locations of all photos belonging to the same person. You need to randomly pick 2 *distinct* photos.
 *   **Code Scaffold**:
     ```python
@@ -133,7 +149,7 @@ We must group images into triplets (Anchor, Positive, Negative) to feed the Siam
     *   Set `size=2` to get two indices.
     *   Set `replace=False` so that `np.random.choice` does not pick the same index twice (an image cannot be compared with itself).
 
-##### **TODO 6b: Pick a Negative Label**
+##### **TODO 2b: Pick a Negative Label**
 *   **The Logic**: You must find a person *other than* the current person, and then pick one of their photos.
 *   **Code Scaffold**:
     ```python
@@ -149,7 +165,7 @@ We must group images into triplets (Anchor, Positive, Negative) to feed the Siam
     *   `np.unique()` extracts the unique names/labels.
     *   `np.random.choice(unique_others)` selects one of those labels.
 
-##### **TODO 6c: Append Triplet Images**
+##### **TODO 2c: Append Triplet Images**
 *   **The Logic**: Add the actual image arrays corresponding to our chosen indices to the batch lists.
 *   **Code Scaffold**:
     ```python
@@ -165,7 +181,7 @@ We must group images into triplets (Anchor, Positive, Negative) to feed the Siam
 #### **Section 4: Model Architecture**
 We will build the face embedding model using Keras.
 
-##### **TODO 7a: Load MobileNetV2 Backbone**
+##### **TODO 3a: Load MobileNetV2 Backbone**
 *   **The Logic**: Instantiate the MobileNetV2 architecture initialized with pre-trained weights, but discard its final 1000-class classification layers.
 *   **Code Scaffold**:
     ```python
@@ -180,7 +196,7 @@ We will build the face embedding model using Keras.
     *   `include_top` must be `False` (removes the default classification head).
     *   `weights` must be `"imagenet"`.
 
-##### **TODO 7b: Freeze the Backbone**
+##### **TODO 3b: Freeze the Backbone**
 *   **The Logic**: We do not want to change the visual features learned on ImageNet; we only want to train our new projection head.
 *   **Code Scaffold**:
     ```python
@@ -189,7 +205,7 @@ We will build the face embedding model using Keras.
 *   **Cheat Sheet**:
     *   Set this property to `False`.
 
-##### **TODO 7c: Build the Embedding Head**
+##### **TODO 3c: Build the Embedding Head**
 *   **The Logic**: Connect the input, preprocessing, backbone, pooling, and Dense projection layers together in a functional pipeline.
 *   **Code Scaffold**:
     ```python
@@ -210,7 +226,7 @@ We will build the face embedding model using Keras.
 #### **Section 5: Triplet Loss & Training**
 Now we implement the custom Triplet Loss mathematical layer.
 
-##### **TODO 8a & 8b: Compute Positive and Negative Squared L2 Distances**
+##### **TODO 4a & 4b: Compute Positive and Negative Squared L2 Distances**
 *   **The Logic**: Calculate the squared distance between vectors: $d^2(u, v) = \sum (u_i - v_i)^2$.
 *   **Code Scaffold**:
     ```python
@@ -221,14 +237,14 @@ Now we implement the custom Triplet Loss mathematical layer.
     *   Use `tf.square(difference)` to square the values.
     *   Use `tf.reduce_sum(..., axis=-1)` to sum along the embedding dimension (the last axis, which contains the 128 elements).
 
-##### **TODO 8c: Compute Basic Loss**
+##### **TODO 4c: Compute Basic Loss**
 *   **The Logic**: Determine if the positive is closer than the negative by at least our safety margin.
 *   **Code Scaffold**:
     ```python
     basic_loss = pos_dist - neg_dist + self.margin
     ```
 
-##### **TODO 8d: Clamp and Average**
+##### **TODO 4d: Clamp and Average**
 *   **The Logic**: If a triplet is "easy" (loss < 0), we ignore it by clamping it to 0.0. Then, we average the loss across the entire training batch.
 *   **Code Scaffold**:
     ```python
@@ -239,7 +255,7 @@ Now we implement the custom Triplet Loss mathematical layer.
     *   Pass `0.0` to `tf.maximum()` to ensure we do not optimize already-correct triplets.
     *   Call `self.add_loss(loss)` so Keras tracks this loss internally for backpropagation.
 
-##### **TODO 9: Fit the Model**
+##### **TODO 5: Fit the Model**
 *   **The Logic**: Start the training process with our custom generator.
 *   **Code Scaffold**:
     ```python
@@ -262,7 +278,7 @@ Now we implement the custom Triplet Loss mathematical layer.
 #### **Section 6: Evaluation**
 We measure how well-separated our clusters are using a Nearest-Neighbor classifier.
 
-##### **TODO 10a: Generate Embeddings**
+##### **TODO 6a: Generate Embeddings**
 *   **The Logic**: Extract the 128-D vectors for all images in the train and validation sets.
 *   **Code Scaffold**:
     ```python
@@ -272,7 +288,7 @@ We measure how well-separated our clusters are using a Nearest-Neighbor classifi
 *   **Cheat Sheet**:
     *   Set `batch_size=32` to avoid running out of memory (OOM) on low-resource machines.
 
-##### **TODO 10b: Train 1-NN Classifier**
+##### **TODO 6b: Train 1-NN Classifier**
 *   **The Logic**: Train a simple database lookup model (Nearest Neighbors) on our training embeddings.
 *   **Code Scaffold**:
     ```python
@@ -284,7 +300,7 @@ We measure how well-separated our clusters are using a Nearest-Neighbor classifi
     *   `metric="euclidean"`.
     *   Fit using `train_embeddings` and their corresponding labels `y_train`.
 
-##### **TODO 10c: Predict and Measure Accuracy**
+##### **TODO 6c: Predict and Measure Accuracy**
 *   **The Logic**: Predict labels for our validation embeddings and check what percentage is correct.
 *   **Code Scaffold**:
     ```python
@@ -366,7 +382,7 @@ When deploying AI locally on laptops, the silicon you target drastically affects
 #### **Method: `preprocess_face`**
 We crop a face out of our video feed and must format it to match what our trained model expects.
 
-##### **TODO 1a: Resize Face Image**
+##### **TODO 7a: Resize Face Image**
 *   **The Logic**: The camera crop can be any size (depending on how close you are to the lens). We must resize it to match the exact input shape of our embedding model.
 *   **Code Scaffold**:
     ```python
@@ -375,7 +391,7 @@ We crop a face out of our video feed and must format it to match what our traine
 *   **Cheat Sheet**:
     *   Pass `target_size` (the second argument of this method, representing width and height) to `cv2.resize()`.
 
-##### **TODO 1b: Convert BGR to RGB**
+##### **TODO 7b: Convert BGR to RGB**
 *   **The Logic**: OpenCV loads and displays images in Blue-Green-Red (BGR) color channel order, but standard neural networks expect Red-Green-Blue (RGB) format. Failing to swap channels will make colors look wrong to the network, resulting in corrupted face passports.
 *   **Code Scaffold**:
     ```python
@@ -384,7 +400,7 @@ We crop a face out of our video feed and must format it to match what our traine
 *   **Cheat Sheet**:
     *   Use the conversion constant `cv2.COLOR_BGR2RGB`.
 
-##### **TODO 1c: Normalize to [0.0, 1.0]**
+##### **TODO 7c: Normalize to [0.0, 1.0]**
 *   **The Logic**: Cast the pixel values to decimal floats and scale them down.
 *   **Code Scaffold**:
     ```python
@@ -394,7 +410,7 @@ We crop a face out of our video feed and must format it to match what our traine
     *   Cast using `"float32"`.
     *   Divide by `255.0`.
 
-##### **TODO 1d: Add Batch Dimension**
+##### **TODO 7d: Add Batch Dimension**
 *   **The Logic**: A single camera frame crop has dimensions `(Height, Width, Channels)`. Our model expects a batch dimension: `(BatchSize, Height, Width, Channels)`. We add an extra dimension at index 0 to represent a "batch of 1 image".
 *   **Code Scaffold**:
     ```python
@@ -408,7 +424,7 @@ We crop a face out of our video feed and must format it to match what our traine
 #### **Method: `get_embedding`**
 We run the preprocessed face through the network to generate its 128-D passport.
 
-##### **TODO 2a: Predict Embedding**
+##### **TODO 8a: Predict Embedding**
 *   **The Logic**: Pass the preprocessed image batch to the model. We explicitly disable logging printouts because showing a progress bar inside a real-time video stream loop will freeze the frame rate.
 *   **Code Scaffold**:
     ```python
@@ -417,7 +433,7 @@ We run the preprocessed face through the network to generate its 128-D passport.
 *   **Cheat Sheet**:
     *   Set `verbose=0`.
 
-##### **TODO 2b: Flatten Array**
+##### **TODO 8b: Flatten Array**
 *   **The Logic**: The model's prediction returns a 2D batch tensor of shape `(1, 128)`. We need a 1D vector of shape `(128,)` to perform our database math.
 *   **Code Scaffold**:
     ```python
@@ -426,7 +442,7 @@ We run the preprocessed face through the network to generate its 128-D passport.
 *   **Cheat Sheet**:
     *   Call the `.flatten()` method on the numpy array.
 
-##### **TODO 2c: L2 Normalisation**
+##### **TODO 8c: L2 Normalisation**
 *   **The Logic**: Project the embedding onto a unit sphere. If we divide the vector by its mathematical length (L2 norm), the final vector will have a length of exactly $1.0$. This allows us to calculate Cosine Similarity using only a simple dot product later.
 *   **Code Scaffold**:
     ```python
@@ -440,7 +456,7 @@ We run the preprocessed face through the network to generate its 128-D passport.
 #### **Method: `cosine_similarity`**
 We measure how similar two facial passports are.
 
-##### **TODO 3: Compute Dot Product**
+##### **TODO 9: Compute Dot Product**
 *   **The Logic**: Since both vectors are L2-normalized, the cosine similarity simplifies to the vector dot product: $\cos(\theta) = u \cdot v$.
 *   **Code Scaffold**:
     ```python
@@ -454,7 +470,7 @@ We measure how similar two facial passports are.
 #### **Method: `recognize`**
 We search our database of known teachers/students to find a match.
 
-##### **TODO 4a: Compare to Stored Database**
+##### **TODO 10a: Compare to Stored Database**
 *   **The Logic**: Compare our unknown face embedding against all embeddings stored in the database.
 *   **Code Scaffold**:
     ```python
@@ -463,7 +479,7 @@ We search our database of known teachers/students to find a match.
 *   **Cheat Sheet**:
     *   Compare `embedding` (input face) with the current database item `known_embedding` inside the loop.
 
-##### **TODO 4b: Update Best Match**
+##### **TODO 10b: Update Best Match**
 *   **The Logic**: If the similarity score is the highest we've seen so far, store it along with the person's name.
 *   **Code Scaffold**:
     ```python
@@ -476,7 +492,7 @@ We search our database of known teachers/students to find a match.
     *   Update `best_similarity = similarity`.
     *   Update `best_match = name`.
 
-##### **TODO 4c: Apply Threshold**
+##### **TODO 10c: Apply Threshold**
 *   **The Logic**: If the best match score is below our security threshold, we declare the face "Unknown". This is critical to prevent false recognition of visitors or students not in our class database.
 *   **Code Scaffold**:
     ```python
