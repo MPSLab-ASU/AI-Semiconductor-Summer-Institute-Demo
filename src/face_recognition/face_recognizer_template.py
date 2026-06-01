@@ -163,7 +163,7 @@ class FaceRecognizer:
         #      On edge devices, we keep the resolution low (like 160x160) to limit
         #      the number of multiplication operations (FLOPs) the GPU must run.
         #
-        # TODO 1a: Resize face_image to target_size using cv2.resize.
+        # TODO 7a: Resize face_image to target_size using cv2.resize.
         #           cv2.resize takes (image, (width, height)).
         face_resized = None  # YOUR CODE HERE
 
@@ -172,7 +172,7 @@ class FaceRecognizer:
         #      the model to see "wrong" colours and produce bad embeddings.
         #      This colour channel swap is a standard software preprocessing step.
         #
-        # TODO 1b: Convert face_resized from BGR to RGB.
+        # TODO 7b: Convert face_resized from BGR to RGB.
         #           Use cv2.cvtColor with the correct conversion code.
         #           HINT: the constant you need is cv2.COLOR_BGR2RGB
         face_rgb = None  # YOUR CODE HERE
@@ -182,7 +182,7 @@ class FaceRecognizer:
         #      them to the range [0.0, 1.0] (float32). This makes calculations
         #      stable and compatible with GPU FP32 precision.
         #
-        # TODO 1c: Cast face_rgb to float32 and divide by 255.0 so values are
+        # TODO 7c: Cast face_rgb to float32 and divide by 255.0 so values are
         #           in the range [0.0, 1.0].
         face_normalized = None  # YOUR CODE HERE
 
@@ -191,7 +191,7 @@ class FaceRecognizer:
         #      shape (H, W, 3), so we add an extra dimension at position 0
         #      to make it (1, H, W, 3) — a "batch of one".
         #
-        # TODO 1d: Add a batch dimension at axis=0 using np.expand_dims.
+        # TODO 7d: Add a batch dimension at axis=0 using np.expand_dims.
         #           HINT: np.expand_dims(array, axis=0)
         face_batch = None  # YOUR CODE HERE
 
@@ -228,7 +228,7 @@ class FaceRecognizer:
             #      This runs inference. For real-time applications, we want this
             #      to happen in < 30 milliseconds!
             #
-            # TODO 2a: Call self.model.predict on face_input.
+            # TODO 8a: Call self.model.predict on face_input.
             #           Pass verbose=0 to suppress progress bar output.
             #           (Printing a progress bar for every video frame ruins CLI output!)
             embedding = None  # YOUR CODE HERE
@@ -237,7 +237,7 @@ class FaceRecognizer:
             #      We want a 1-D array of shape (128,), so we flatten it.
             #      Think of this 128-D vector as our "Facial Passport".
             #
-            # TODO 2b: Flatten the embedding to a 1-D array.
+            # TODO 8b: Flatten the embedding to a 1-D array.
             #           HINT: numpy arrays have a .flatten() method.
             embedding = None  # YOUR CODE HERE
 
@@ -246,7 +246,7 @@ class FaceRecognizer:
             #      This makes comparing embeddings using dot product extremely fast,
             #      since we don't have to divide by vector lengths during real-time matching.
             #
-            # TODO 2c: L2-normalise the embedding by dividing it by its norm.
+            # TODO 8c: L2-normalise the embedding by dividing it by its norm.
             #           HINT: np.linalg.norm(embedding) returns the L2 norm.
             embedding = None  # YOUR CODE HERE
 
@@ -301,7 +301,7 @@ class FaceRecognizer:
         #      the Cosine Similarity formula simplifies to just the dot product!
         #      This is computationally cheap and runs incredibly fast.
         #
-        # TODO 3: Return the dot product of embedding1 and embedding2.
+        # TODO 9: Return the dot product of embedding1 and embedding2.
         #         HINT: np.dot(a, b) computes the dot product of two vectors.
         pass  # YOUR CODE HERE
 
@@ -344,7 +344,7 @@ class FaceRecognizer:
                 # WHY: Compare the current video face embedding with one of the
                 #      embeddings in our local database.
                 #
-                # TODO 4a: Compute the cosine similarity between `embedding`
+                # TODO 10a: Compute the cosine similarity between `embedding`
                 #           (the face we want to identify) and `known_embedding`
                 #           (one stored embedding for `name`).
                 #           Use self.cosine_similarity().
@@ -353,7 +353,7 @@ class FaceRecognizer:
                 # WHY: We perform a "Nearest Neighbor" search. We want to find
                 #      which identity matches our target face with the highest score.
                 #
-                # TODO 4b: If this similarity is greater than best_similarity,
+                # TODO 10b: If this similarity is greater than best_similarity,
                 #           update best_similarity and set best_match = name.
                 # YOUR CODE HERE
 
@@ -361,7 +361,7 @@ class FaceRecognizer:
         #      database. If the best similarity is below our threshold (e.g. 0.6),
         #      we flag the face as "Unknown" rather than guessing incorrectly.
         #
-        # TODO 4c: If best_similarity is greater than or equal to
+        # TODO 10c: If best_similarity is greater than or equal to
         #           self.similarity_threshold, return (best_match, best_similarity).
         #           Otherwise the face is unrecognised — return (None, best_similarity).
         # YOUR CODE HERE
