@@ -6,10 +6,10 @@ Fill in every section marked  # TODO  to complete the inference pipeline.
 Learning objectives
 -------------------
 After completing this file you will understand:
-  1. How to preprocess raw face images for a neural network
-  2. How to run a trained model and extract a face embedding
-  3. What cosine similarity is and why L2-normalised vectors make it simple
-  4. How a nearest-neighbour search over embeddings produces a face ID
+  1. How to crop, resize, and format raw face images so the computer chip can read them
+  2. How to run a trained model and extract a face embedding (our 128-number "facial passport")
+  3. How to compare passports using basic multiplications and additions
+  4. How to do a simple yearbook lookup (nearest-neighbor search) to match a face
 """
 
 import numpy as np
@@ -28,10 +28,10 @@ class FaceRecognizer:
 
     The recognition pipeline is:
         raw face image
-            → preprocess_face()    # resize + normalise
-            → get_embedding()      # run neural network
-            → cosine_similarity()  # compare with stored faces
-            → recognize()          # pick the best match
+            → preprocess_face()    # resize + scale values
+            → get_embedding()      # run model to get 128-number passport
+            → cosine_similarity()  # compare passports using multiplication & addition
+            → recognize()          # lookup the best match in our database
     """
 
     def __init__(self, config):
@@ -149,7 +149,7 @@ class FaceRecognizer:
         Prepare a face crop for model input.
 
         The model was trained on 160×160 RGB images with pixel values in [0, 1].
-        OpenCV reads images in BGR format, so we must convert the colour order.
+        OpenCV reads images in BGR format, so we must convert the color order.
 
         Args:
             face_image (np.ndarray): Face crop in BGR format, any size.
@@ -158,38 +158,35 @@ class FaceRecognizer:
         Returns:
             np.ndarray: Shape (1, height, width, 3), dtype float32, values in [0, 1].
         """
-        # WHY: The network was trained at a fixed resolution. We must resize
-        #      every face crop to that same size before feeding it in.
-        #      On edge devices, we keep the resolution low (like 160x160) to limit
-        #      the number of multiplication operations (FLOPs) the GPU must run.
+        # WHY: The network was trained on a fixed grid size. Resizing to 160x160
+        #      limits the number of multiplications and additions the hardware
+        #      needs to calculate per second, saving power and running faster.
         #
         # TODO 7a: Resize face_image to target_size using cv2.resize.
         #           cv2.resize takes (image, (width, height)).
         face_resized = None  # YOUR CODE HERE
 
-        # WHY: OpenCV stores images as Blue-Green-Red (BGR), but the model was
-        #      trained on Red-Green-Blue (RGB) images. Getting this wrong causes
-        #      the model to see "wrong" colours and produce bad embeddings.
-        #      This colour channel swap is a standard software preprocessing step.
+        # WHY: OpenCV reads colors in Blue-Green-Red (BGR) order, but our model
+        #      expects Red-Green-Blue (RGB). Failing to swap them is like looking
+        #      through a filter where red and blue are swapped (a red apple looks blue),
+        #      resulting in a corrupted passport.
         #
         # TODO 7b: Convert face_resized from BGR to RGB.
         #           Use cv2.cvtColor with the correct conversion code.
         #           HINT: the constant you need is cv2.COLOR_BGR2RGB
         face_rgb = None  # YOUR CODE HERE
 
-        # WHY: Neural networks work best when inputs are small, bounded numbers.
-        #      Pixel values run from 0 to 255 (uint8). Dividing by 255.0 maps
-        #      them to the range [0.0, 1.0] (float32). This makes calculations
-        #      stable and compatible with GPU FP32 precision.
+        # WHY: Raw pixels are whole numbers from 0 to 255 (representing brightness).
+        #      Dividing by 255.0 converts them to decimal numbers between 0.0 and 1.0,
+        #      which makes calculations stable and easier for the computer chip to process.
         #
         # TODO 7c: Cast face_rgb to float32 and divide by 255.0 so values are
         #           in the range [0.0, 1.0].
         face_normalized = None  # YOUR CODE HERE
 
-        # WHY: The model expects a *batch* of images, not a single image.
-        #      Its input shape is (batch_size, H, W, 3). A single image has
-        #      shape (H, W, 3), so we add an extra dimension at position 0
-        #      to make it (1, H, W, 3) — a "batch of one".
+        # WHY: The model is designed to process folders (batches) of images. Even if
+        #      we only have one face image, we must place it inside a "folder of 1 image"
+        #      (expanding the array at axis=0) so the model knows how to read it.
         #
         # TODO 7d: Add a batch dimension at axis=0 using np.expand_dims.
         #           HINT: np.expand_dims(array, axis=0)
@@ -201,9 +198,9 @@ class FaceRecognizer:
         """
         Run the neural network and return a 128-dimensional face embedding.
 
-        An "embedding" is a compact numeric representation of a face — a list
-        of 128 numbers that captures the unique features of that face. Similar
-        faces produce similar embeddings; different people produce different ones.
+        An "embedding" is a 128-number "facial passport" list that captures
+        unique features of a face. Similar faces produce similar lists of numbers;
+        different people produce very different ones.
 
         Args:
             face_image (np.ndarray): Face crop (BGR format, any size).
@@ -220,31 +217,31 @@ class FaceRecognizer:
             return None
 
         try:
-            # Resize, convert colour, normalise, and add batch dimension.
+            # Resize, convert color, normalize, and add batch dimension.
             face_input = self.preprocess_face(face_image)
 
-            # WHY: model.predict() runs the neural network on the input batch
-            #      and returns its output — here a (1, 128) array of raw numbers.
-            #      This runs inference. For real-time applications, we want this
-            #      to happen in < 30 milliseconds!
+            # WHY: Running the model (the guessing phase) takes the processed image
+            #      and performs ~300 million multiplications and additions, producing
+            #      a list of 128 raw numbers. For real-time video, this must happen in
+            #      less than 30 milliseconds!
             #
             # TODO 8a: Call self.model.predict on face_input.
             #           Pass verbose=0 to suppress progress bar output.
             #           (Printing a progress bar for every video frame ruins CLI output!)
             embedding = None  # YOUR CODE HERE
 
-            # WHY: The output shape is (1, 128) — a batch of one embedding.
-            #      We want a 1-D array of shape (128,), so we flatten it.
-            #      Think of this 128-D vector as our "Facial Passport".
+            # WHY: The output is a batch folder containing one passport list.
+            #      We flatten it to a single 1-D list of 128 numbers (our Facial Passport).
             #
             # TODO 8b: Flatten the embedding to a 1-D array.
             #           HINT: numpy arrays have a .flatten() method.
             embedding = None  # YOUR CODE HERE
 
-            # WHY: L2 normalisation divides every element by the vector's length
-            #      (its L2 norm), projecting it onto the unit sphere (length = 1.0).
-            #      This makes comparing embeddings using dot product extremely fast,
-            #      since we don't have to divide by vector lengths during real-time matching.
+            # WHY: L2 normalization is like shrinking or stretching the passport list
+            #      so its overall mathematical length is exactly 1.0. When all database
+            #      passports are normalized to 1.0, comparing them is super fast: we just
+            #      multiply corresponding numbers and add them up, without any complex
+            #      division later.
             #
             # TODO 8c: L2-normalise the embedding by dividing it by its norm.
             #           HINT: np.linalg.norm(embedding) returns the L2 norm.
@@ -280,13 +277,10 @@ class FaceRecognizer:
         """
         Measure how similar two face embeddings are.
 
-        Cosine similarity ranges from -1 (opposite) to 1 (identical direction).
-        A value close to 1 means the two embeddings point in the same direction
-        in 128-dimensional space — i.e. they probably belong to the same person.
-
-        Because both embeddings are L2-normalised (unit vectors), the formula
-        simplifies beautifully:
-            cosine_similarity(a, b) = a · b   (the dot product)
+        Cosine similarity ranges from -1 (opposite) to 1 (identical). When the overall
+        mathematical length of both passports is 1.0, finding their similarity simplifies
+        to a simple dot product (multiplying the corresponding numbers together and
+        adding them up).
 
         You do NOT need to divide by the norms — they are both 1 by definition.
 
@@ -297,9 +291,9 @@ class FaceRecognizer:
         Returns:
             float: Cosine similarity score in [-1, 1].
         """
-        # WHY: Since both embeddings are normalized to a length of 1.0, 
-        #      the Cosine Similarity formula simplifies to just the dot product!
-        #      This is computationally cheap and runs incredibly fast.
+        # WHY: Since both passports are scaled to a length of 1.0, similarity is just a
+        #      dot product (multiply the 128 numbers pairwise and add them up). This takes
+        #      only 128 multiplications and additions per person, which runs incredibly fast!
         #
         # TODO 9: Return the dot product of embedding1 and embedding2.
         #         HINT: np.dot(a, b) computes the dot product of two vectors.
@@ -310,12 +304,10 @@ class FaceRecognizer:
         Identify who is in the face image.
 
         Strategy:
-          1. Convert the face into a 128-d embedding.
-          2. Compare that embedding against every stored embedding using
-             cosine similarity.
-          3. Return the name of the person whose stored embedding is most
-             similar — but only if that similarity exceeds the threshold
-             (otherwise the face is treated as "unknown").
+          1. Convert the face into a 128-number passport.
+          2. Compare it to every passport in our database using multiplication and addition.
+          3. Return the closest match's name, but only if it's above our security cutoff
+             threshold (otherwise label as "Unknown").
 
         Args:
             face_image (np.ndarray): Face crop (BGR format).
@@ -341,8 +333,7 @@ class FaceRecognizer:
         for name, known_embeddings in self.known_faces.items():
             for known_embedding in known_embeddings:
 
-                # WHY: Compare the current video face embedding with one of the
-                #      embeddings in our local database.
+                # WHY: Compare the video face passport with one stored in our database.
                 #
                 # TODO 10a: Compute the cosine similarity between `embedding`
                 #           (the face we want to identify) and `known_embedding`
@@ -350,16 +341,16 @@ class FaceRecognizer:
                 #           Use self.cosine_similarity().
                 similarity = None  # YOUR CODE HERE
 
-                # WHY: We perform a "Nearest Neighbor" search. We want to find
-                #      which identity matches our target face with the highest score.
+                # WHY: We perform a "yearbook lookup" (Nearest Neighbor search) to find
+                #      which stored face matches our target face with the highest similarity score.
                 #
                 # TODO 10b: If this similarity is greater than best_similarity,
                 #           update best_similarity and set best_match = name.
                 # YOUR CODE HERE
 
-        # WHY: "Open-set" recognition means a face could be someone outside our
-        #      database. If the best similarity is below our threshold (e.g. 0.6),
-        #      we flag the face as "Unknown" rather than guessing incorrectly.
+        # WHY: The threshold is our security cutoff. If the best similarity is below this
+        #      (e.g., 0.60), we declare the face "Unknown". This is like a security guard
+        #      refusing entry if someone's photo ID doesn't look at least 60% similar to them.
         #
         # TODO 10c: If best_similarity is greater than or equal to
         #           self.similarity_threshold, return (best_match, best_similarity).
