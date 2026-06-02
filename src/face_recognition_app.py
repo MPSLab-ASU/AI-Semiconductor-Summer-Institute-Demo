@@ -29,13 +29,16 @@ class FaceRecognitionApp:
     Main face recognition application with video feed processing
     """
     
-    def __init__(self, config_path='config/config.yaml'):
+    def __init__(self, config_path=None):
         """
         Initialize the application
         
         Args:
             config_path (str): Path to configuration file
         """
+        if config_path is None or config_path == 'config/config.yaml':
+            config_path = str(Path(__file__).parent / 'config' / 'config.yaml')
+            
         self.config = self._load_config(config_path)
         self.camera = None
         self.detector = None
@@ -52,11 +55,25 @@ class FaceRecognitionApp:
         self.thickness = self.display_config.get('thickness', 2)
         
     def _load_config(self, config_path):
-        """Load configuration from YAML file"""
+        """Load configuration from YAML file and resolve paths"""
         try:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
             logger.info(f"Loaded configuration from {config_path}")
+            
+            # Resolve relative paths relative to src directory
+            src_dir = Path(__file__).parent
+            
+            fd = config.get('face_detection', {})
+            for key in ['dnn_model_path', 'dnn_weights_path']:
+                if key in fd and not os.path.isabs(fd[key]):
+                    fd[key] = str(src_dir / fd[key])
+                    
+            fr = config.get('face_recognition', {})
+            for key in ['model_path', 'database_path']:
+                if key in fr and not os.path.isabs(fr[key]):
+                    fr[key] = str(src_dir / fr[key])
+                    
             return config
         except Exception as e:
             logger.error(f"Error loading config: {e}")
