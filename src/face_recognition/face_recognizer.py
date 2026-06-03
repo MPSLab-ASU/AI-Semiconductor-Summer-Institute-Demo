@@ -231,25 +231,50 @@ class FaceRecognizer:
         Returns:
             np.ndarray: A cropped resized face matching training data's aspect ratio
         """
-        # TODO 1: Implement the face extraction logic.
-        #         Extract face crop matching the training data's aspect ratio.
-        #         The LFW dataset used for training has images of size 125x94.
-        #         When resized to 224x224, faces were stretched horizontally by ~33%.
-        #         To match this, we extract a taller bounding box (aspect ratio 94:125).
-        # WHY:
-        # The model was trained on images with a specific aspect ratio. 
-        # If we don't match that ratio, the model will see stretched or 
-        # compressed faces and won't recognize them properly.
         x,y,w,h = face_coordinates
+
+        # WHY: The LFW dataset used for training has images of size 125x94 (height x width).
+        #      When resized to 224x224, faces were stretched horizontally by ~33%.
+        #      To match this, we must extract a taller bounding box (aspect ratio 94:125)
+        #      around the face's center point.
+        #
+        # TODO 1a: Unpack the face_coordinates (x, y, w, h), calculate the center point
+        #          (center_x, center_y), and calculate target_w and target_h where
+        #          target_h = target_w * (125 / 94).
+        
+        # Find the center of the face
         center_x = x + w // 2
         center_y = y + h // 2
+        
+        # Set the target width
         target_w = w
+        
+        # Calculate the target height using the aspect ratio of LFW dataset
         target_h = int(w * (125.0 / 94.0))
+
+        # WHY: The face box center might be close to the edges of the image. We must
+        #      ensure our new top-left coordinates (new_x, new_y) are at least 0,
+        #      and that the new width and height do not extend past the image boundaries.
+        #
+        # TODO 1b: Calculate new top-left coordinates new_x and new_y using max(0, ...).
+        #          Get frame_h and frame_w from full_frame.shape, then calculate new_w
+        #          and new_h by clamping them within the image dimensions using min().
+
+        # Find the max width
         new_x = max(0, center_x - target_w // 2)
+        # Find the max height
         new_y = max(0, center_y - target_h // 2)
         frame_h, frame_w = full_frame.shape[:2]
+        
+        # Clamp the width and height to the image boundaries
         new_w = min(target_w, frame_w - new_x)
         new_h = min(target_h, frame_h - new_y)
+
+        # WHY: Slicing the NumPy array extracts the target sub-region (the face ROI)
+        #      without copying the underlying image data in memory, making it fast.
+        #   
+        # TODO 1c: Slice full_frame using the calculated new_y, new_h, new_x, and new_w,
+        #          and return the cropped face image.
         return full_frame[new_y:new_y+new_h, new_x:new_x+new_w]
 
 
