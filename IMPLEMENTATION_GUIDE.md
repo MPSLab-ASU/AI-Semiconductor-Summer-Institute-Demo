@@ -25,9 +25,9 @@ Instead, we use **Metric Learning** (specifically **FaceNet**).
 Here are the key concepts explained using simple, classroom-friendly analogies:
 
 #### 1. Face Embeddings (The "Facial Passport")
-> **Analogy**: Imagine a passport that doesn't show your photo, but instead lists $128$ precise numbers describing your facial structure (e.g., distance between eyes, width of nose, height of forehead). 
+> **Analogy**: Imagine a passport that doesn't show your photo, but instead lists $256$ precise numbers describing your facial structure (e.g., distance between eyes, width of nose, height of forehead). 
 > 
-> A neural network acts as the passport officer. It takes a raw picture and translates it into this **128-dimensional vector** (a list of 128 decimal numbers). If two pictures are of the same person, their facial passports will contain very similar numbers.
+> A neural network acts as the passport officer. It takes a raw picture and translates it into this **256-dimensional vector** (a list of 256 decimal numbers). If two pictures are of the same person, their facial passports will contain very similar numbers.
 
 #### 2. Siamese Networks (The "Shared Brain")
 > **Analogy**: Imagine three identical clone workers working at three desks. They share the exact same brain, memory, and skills.
@@ -87,11 +87,11 @@ Training isn't just mathematically heavy; it is incredibly memory-hungry. Why?
 > 
 > If you have a batch size of 32, it's like keeping the step-by-step scratchpads of 32 students active at the exact same time. This takes up a huge amount of table space (RAM/Memory). If you run out of table space, the computer crashes with an "Out of Memory" (OOM) error!
 
-#### 3. Our Solution: Transfer Learning (Freezing the Brain)
-Performing 45+ Trillion calculations from scratch would take days on a standard laptop. Here is how we make it run in minutes:
-*   **Pre-trained Brain:** We load a MobileNetV2 model that has already been trained on 1.2 million images. It already has 2.2 million pre-tuned parameters (settings).
-*   **Freezing:** By setting `trainable = False`, we lock these 2.2 million parameters. **This completely eliminates the need to calculate adjustments (the 600 Million backward-pass calculations) for this large part of the model!**
-*   **The Result:** We only perform the guessing phase (300 Million calculations) and only calculate adjustments for our tiny, custom face-matching layer (~160,000 parameters). This slashes training time from days to just a few minutes, bypassing memory and calculation bottlenecks.
+#### 3. Our Solution: Transfer Learning (Fine-Tuning the Brain)
+Performing 45+ Trillion calculations from scratch would take days on a standard laptop. Here is how we drastically speed up the learning process:
+*   **Pre-trained Brain:** We load a MobileNetV3Small model that has already been trained on 1.2 million images (ImageNet). It comes with ~0.9 million pre-tuned parameters (settings) that already understand basic shapes, lines, and textures.
+*   **Fine-Tuning:** By setting `trainable = True`, we unfreeze these parameters to actively adjust them for human faces. While we are still doing the backward-pass calculations, starting with pre-trained weights instead of random weights means the model converges to high accuracy in just a few epochs instead of hundreds!
+*   **The Result:** We perform the guessing phase and calculate adjustments for both the backbone and our custom projection layer (~426,000 parameters). Because we use a small, efficient backbone (MobileNetV3Small) and only need a few epochs of fine-tuning, training still completes in minutes rather than days.
 
 ---
 
@@ -181,14 +181,15 @@ We must group images into triplets (Anchor, Positive, Negative) to feed the Siam
 #### **Section 4: Model Architecture (Building the Model)**
 We will build the face embedding model using Keras.
 
-##### **TODO 3a: Load MobileNetV2 Backbone**
-*   **The Logic**: Load the pre-made MobileNetV2 architecture. Think of this as the **main visual cortex** of the model—it has already been trained on 1.2 million images and knows how to recognize shapes, lines, and textures. We discard its default "classification head" (the final layers that guess category labels like "cat" or "dog") because we want to output a custom facial passport instead.
+##### **TODO 3a: Load MobileNetV3Small Backbone**
+*   **The Logic**: Load the pre-made MobileNetV3Small architecture. Think of this as the **main visual cortex** of the model—it has already been trained on 1.2 million images and knows how to recognize shapes, lines, and textures. We discard its default "classification head" (the final layers that guess category labels like "cat" or "dog") because we want to output a custom facial passport instead.
 *   **Code Scaffold**:
     ```python
-    base_model = tf.keras.applications.MobileNetV2(
+    base_model = tf.keras.applications.MobileNetV3Small(
         input_shape=(___, ___, ___),
         include_top=___,
-        weights="___"
+        weights="___",
+        include_preprocessing=False,
     )
     ```
 *   **Cheat Sheet**:
@@ -196,30 +197,31 @@ We will build the face embedding model using Keras.
     *   `include_top` must be `False` (removes the default classification head).
     *   `weights` must be `"imagenet"`.
 
-##### **TODO 3b: Freeze the Backbone**
-*   **The Logic**: We want to keep the general vision features already learned by the backbone. By freezing it, we tell the computer not to waste energy adjusting any of the 2.2 million parameters in this section.
+##### **TODO 3b: Unfreeze the Backbone**
+*   **The Logic**: We want to actively adjust the vision features learned on ImageNet so they become specialized for human faces. By unfreezing it, we allow the network to perform fine-tuning, leveraging the pre-trained weights as a massive head-start.
 *   **Code Scaffold**:
     ```python
     base_model.trainable = ___
     ```
 *   **Cheat Sheet**:
-    *   Set this property to `False`.
+    *   Set this property to `True`.
 
 ##### **TODO 3c: Build the Embedding Head**
-*   **The Logic**: Connect the input, preprocessing, backbone, pooling, and Dense projection layers together in a functional pipeline. Add a small custom layer to the end of the backbone whose job is to shrink the backbone's complex visual data into our final 128-number facial passport list.
+*   **The Logic**: Connect the input, preprocessing, backbone, pooling, and Dense projection layers together in a functional pipeline. Add custom layers to the end of the backbone whose job is to shrink the backbone's complex visual data into our final 256-number facial passport list.
 *   **Code Scaffold**:
     ```python
     inputs  = layers.Input((224, 224, 3))
-    # MobileNetV2 expects input rescaled to [-1, 1], so we scale up X from [0, 1] to [0, 255] first
-    x       = tf.keras.applications.mobilenet_v2.preprocess_input(inputs * 255.0)
+    # MobileNetV3 expects inputs in the range [0, 255] for its internal preprocessing
+    x       = inputs * 255.0
     x       = base_model(x, training=___)
     x       = layers.GlobalAveragePooling2D()(x)
+    x       = layers.Dense(512, activation='relu')(x)
     x       = layers.Dense(___)(x)
     outputs = layers.Lambda(lambda v: tf.math.l2_normalize(v, axis=1), name="embedding_norm")(x)
     ```
 *   **Cheat Sheet**:
     *   Set `training=False` inside the `base_model` call (this ensures Batch Normalization layers don't update their sliding statistics during training).
-    *   The `layers.Dense` layer output size should be `128` (our final embedding size).
+    *   The final `layers.Dense` layer output size should be `256` (our final embedding size).
 
 ---
 
@@ -227,7 +229,7 @@ We will build the face embedding model using Keras.
 Now we implement the custom Triplet Loss mathematical layer.
 
 ##### **TODO 4a & 4b: Compute Positive and Negative Squared Distances**
-*   **The Logic**: Calculate the straight-line distance between two facial passports. This is like finding the distance between two points on a graph: for each of the 128 numbers, find the difference, square it (to remove negative signs), and add them all up.
+*   **The Logic**: Calculate the straight-line distance between two facial passports. This is like finding the distance between two points on a graph: for each of the 256 numbers, find the difference, square it (to remove negative signs), and add them all up.
 *   **Code Scaffold**:
     ```python
     pos_dist = tf.reduce_sum(tf.square(anchor - positive), axis=___)
@@ -235,7 +237,7 @@ Now we implement the custom Triplet Loss mathematical layer.
     ```
 *   **Cheat Sheet**:
     *   Use `tf.square(difference)` to square the values.
-    *   Use `tf.reduce_sum(..., axis=-1)` to sum along the embedding dimension (the last axis, which contains the 128 elements).
+    *   Use `tf.reduce_sum(..., axis=-1)` to sum along the embedding dimension (the last axis, which contains the 256 elements).
 
 ##### **TODO 4c: Compute Basic Loss**
 *   **The Logic**: Determine if the positive is closer than the negative by at least our safety margin.
@@ -279,7 +281,7 @@ Now we implement the custom Triplet Loss mathematical layer.
 We measure how well-separated our face clusters are using a **Nearest-Neighbor classifier (1-NN)**. Think of this as a simple yearbook lookup: it takes a new face passport and searches our database to find the single closest passport, matching the identity.
 
 ##### **TODO 6a: Generate Embeddings**
-*   **The Logic**: Extract the 128-number facial passports for all images in the train and validation sets.
+*   **The Logic**: Extract the 256-number facial passports for all images in the train and validation sets.
 *   **Code Scaffold**:
     ```python
     train_embeddings = embedding_model.predict(X_train, batch_size=___)
@@ -328,15 +330,15 @@ Now let's break down the cost of *inference* (running the model on a single came
 
 **1. Multiplications & Additions (Computational Cost)**
 For every face detected, the pipeline has two stages:
-*   **Neural Network Run:** Pushing a 224x224 image through our model to generate the 128-number passport requires exactly **1 Guessing Phase (Forward Pass)** (~300 Million multiplications and additions). There is no learning backward pass during inference!
-*   **Passport Comparison:** Comparing the new 128-number passport to a known person's passport in our database is super fast: we just multiply each of the 128 numbers together and add up the results (128 multiplications and additions per person in our database). For a database of $N$ students, the cost is $128 \times N$ calculations.
+*   **Neural Network Run:** Pushing a 224x224 image through our model to generate the 256-number passport requires exactly **1 Guessing Phase (Forward Pass)** (~300 Million multiplications and additions). There is no learning backward pass during inference!
+*   **Passport Comparison:** Comparing the new 256-number passport to a known person's passport in our database is super fast: we just multiply each of the 256 numbers together and add up the results (256 multiplications and additions per person in our database). For a database of $N$ students, the cost is $256 \times N$ calculations.
 
 **2. Memory Analysis (RAM Cost)**
 *   Unlike training, which must store all intermediate math steps across a batch of 32 images (requiring Gigabytes of space), inference only processes **1 frame at a time**.
 *   Furthermore, the computer can instantly throw away the math steps for a layer as soon as it computes the next layer. This drops memory requirements from Gigabytes down to just a few Megabytes!
 
 **The Hardware Insight:**
-Running the neural network to get the passport (~300 Million calculations) completely dwarfs the database search (e.g., just $1.28$ Million calculations for a database of 10,000 students). This explains why we want a GPU or NPU for the network, while the CPU easily handles the database math. The low memory footprint of inference is why it can run smoothly on standard laptops!
+Running the neural network to get the passport (~300 Million calculations) completely dwarfs the database search (e.g., just $2.56$ Million calculations for a database of 10,000 students). This explains why we want a GPU or NPU for the network, while the CPU easily handles the database math. The low memory footprint of inference is why it can run smoothly on standard laptops!
 
 ### 🏎️ Software Optimizations (Translation & Compression)
 Standard neural network models are saved in formats designed for editing and training (like Keras `.keras`). To run them quickly on edge hardware, we optimize them:
@@ -425,7 +427,7 @@ We crop a face out of our video feed and must format it to match what our traine
 ---
 
 #### **Method: `get_embedding`**
-We run the preprocessed face through the network to generate its 128-D passport.
+We run the preprocessed face through the network to generate its 256-D passport.
 
 ##### **TODO 8a: Predict Embedding**
 *   **The Logic**: Pass the preprocessed image batch to the model. We explicitly disable logging printouts because showing a progress bar inside a real-time video stream loop will freeze the frame rate.
@@ -437,7 +439,7 @@ We run the preprocessed face through the network to generate its 128-D passport.
     *   Set `verbose=0`.
 
 ##### **TODO 8b: Flatten Array**
-*   **The Logic**: The model's prediction returns a 2D batch tensor of shape `(1, 128)`. We need a 1D vector of shape `(128,)` to perform our database math.
+*   **The Logic**: The model's prediction returns a 2D batch tensor of shape `(1, 256)`. We need a 1D vector of shape `(256,)` to perform our database math.
 *   **Code Scaffold**:
     ```python
     embedding = embedding.___()
