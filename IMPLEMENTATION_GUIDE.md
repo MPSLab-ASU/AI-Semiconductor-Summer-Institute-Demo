@@ -384,10 +384,44 @@ When deploying AI locally on laptops, the silicon you target drastically affects
 
 ### 📝 Step-by-Step Implementation Guide & Code Scaffolds (Part 2)
 
+#### **Method: `_extract_face`**
+We must extract a face crop from the full camera frame, but we must adjust the bounding box height to match the training dataset's aspect ratio (94:125 width:height). This mimics the ~33% horizontal stretch the model learned during training, preventing narrow-face recognition errors.
+
+##### **TODO 1a: Unpack & Calculate Target Dimensions**
+*   **The Logic**: Unpack the detected bounding box `(x, y, w, h)`, find the face's center point, and calculate a target height `target_h` that is taller than the width (multiplied by `125 / 94` or `~1.33`).
+*   **Code Scaffold**:
+    ```python
+    x, y, w, h = face_coordinates
+    center_x = x + w // 2
+    center_y = y + h // 2
+    target_w = w
+    target_h = int(w * (125.0 / 94.0))
+    ```
+
+##### **TODO 1b: Boundary Checks & Clamping**
+*   **The Logic**: The target box might extend outside the borders of the image frame (especially if the face is close to the edge). We calculate the new top-left coordinates `(new_x, new_y)` and ensure they are at least `0`. Then, we clamp the final width and height `(new_w, new_h)` using `min` so we don't slice past the image shape.
+*   **Code Scaffold**:
+    ```python
+    new_x = max(0, center_x - target_w // 2)
+    new_y = max(0, center_y - target_h // 2)
+    frame_h, frame_w = full_frame.shape[:2]
+    new_w = min(target_w, frame_w - new_x)
+    new_h = min(target_h, frame_h - new_y)
+    ```
+
+##### **TODO 1c: Slice & Crop**
+*   **The Logic**: Perform a fast, non-copying slice on the image array using NumPy slicing `[new_y:new_y+new_h, new_x:new_x+new_w]` and return the cropped face.
+*   **Code Scaffold**:
+    ```python
+    return full_frame[new_y:new_y+new_h, new_x:new_x+new_w]
+    ```
+
+---
+
 #### **Method: `preprocess_face`**
 We crop a face out of our video feed and must format it to match what our trained model expects.
 
-##### **TODO 7a: Resize Face Image**
+##### **TODO 2a: Resize Face Image**
 *   **The Logic**: The camera crop can be any size (depending on how close you are to the lens). We must resize it to match the exact input shape of our embedding model.
 *   **Code Scaffold**:
     ```python
@@ -396,7 +430,7 @@ We crop a face out of our video feed and must format it to match what our traine
 *   **Cheat Sheet**:
     *   Pass `target_size` (the second argument of this method, representing width and height) to `cv2.resize()`.
 
-##### **TODO 7b: Convert BGR to RGB**
+##### **TODO 2b: Convert BGR to RGB**
 *   **The Logic**: OpenCV loads and displays images in Blue-Green-Red (BGR) color order, but standard neural networks expect Red-Green-Blue (RGB). Failing to swap channels will make colors look wrong to the network. It's like looking through a filter where red and blue are swapped (a red apple looks blue), resulting in corrupted face passports.
 *   **Code Scaffold**:
     ```python
@@ -405,7 +439,7 @@ We crop a face out of our video feed and must format it to match what our traine
 *   **Cheat Sheet**:
     *   Use the conversion constant `cv2.COLOR_BGR2RGB`.
 
-##### **TODO 7c: Normalize to [0.0, 1.0]**
+##### **TODO 2c: Normalize to [0.0, 1.0]**
 *   **The Logic**: Cast the pixel values to decimal floats and scale them down.
 *   **Code Scaffold**:
     ```python
@@ -415,7 +449,7 @@ We crop a face out of our video feed and must format it to match what our traine
     *   Cast using `"float32"`.
     *   Divide by `255.0`.
 
-##### **TODO 7d: Add Batch Dimension**
+##### **TODO 2d: Add Batch Dimension**
 *   **The Logic**: A single camera frame crop has dimensions `(Height, Width, Channels)`. Our model expects a "batch" folder of images. We add an extra dimension to turn our single face image into a "folder containing 1 face image".
 *   **Code Scaffold**:
     ```python
@@ -429,7 +463,17 @@ We crop a face out of our video feed and must format it to match what our traine
 #### **Method: `get_embedding`**
 We run the preprocessed face through the network to generate its 128-D passport.
 
-##### **TODO 8a: Predict Embedding**
+##### **TODO 2a (in get_embedding): Extract Face Crop**
+*   **The Logic**: Before running inference, if `face_coordinates` are provided, we crop the face from the full frame using our `_extract_face` helper. Otherwise, we assume the input is already cropped.
+*   **Code Scaffold**:
+    ```python
+    if face_coordinates is not None:
+        face_image = self._extract_face(full_frame, face_coordinates)
+    else:
+        face_image = full_frame
+    ```
+
+##### **TODO 3b: Predict Embedding**
 *   **The Logic**: Pass the preprocessed image batch to the model. We explicitly disable logging printouts because showing a progress bar inside a real-time video stream loop will freeze the frame rate.
 *   **Code Scaffold**:
     ```python
@@ -438,7 +482,7 @@ We run the preprocessed face through the network to generate its 128-D passport.
 *   **Cheat Sheet**:
     *   Set `verbose=0`.
 
-##### **TODO 8b: Flatten Array**
+##### **TODO 3c: Flatten Array**
 *   **The Logic**: The model's prediction returns a 2D batch tensor of shape `(1, 128)`. We need a 1D vector of shape `(128,)` to perform our database math.
 *   **Code Scaffold**:
     ```python
@@ -447,21 +491,12 @@ We run the preprocessed face through the network to generate its 128-D passport.
 *   **Cheat Sheet**:
     *   Call the `.flatten()` method on the numpy array.
 
-##### **TODO 8c: L2 Normalisation**
-*   **The Logic**: This is like shrinking or stretching a line so its length is exactly $1.0$. When all face passports are scaled to a length of 1.0, comparing them is as simple as multiplying their corresponding numbers and adding them up, regardless of how bright or large the original image was.
-*   **Code Scaffold**:
-    ```python
-    embedding = embedding / np.linalg.norm(___)
-    ```
-*   **Cheat Sheet**:
-    *   Pass `embedding` to `np.linalg.norm()` to calculate its length.
-
 ---
 
 #### **Method: `cosine_similarity`**
 We measure how similar two facial passports are.
 
-##### **TODO 9: Compute Dot Product**
+##### **TODO 4: Compute Dot Product**
 *   **The Logic**: Since the passports are scaled to a length of 1.0, finding similarity is just multiplying the corresponding numbers in the two lists and adding them up (the dot product). The higher the sum (closer to 1.0), the more similar the faces.
     > 💡 **Euclidean Distance vs. Cosine Similarity**: You might notice we trained the model using Euclidean Distance (in the Triplet Loss) but are matching faces using Cosine Similarity! This is because when vectors are L2-normalized, they are mathematically equivalent: $Distance^2 = 2 - 2 \times CosineSimilarity$. We swap to Cosine Similarity (a simple dot product) for inference because it takes far fewer CPU cycles than computing square roots, making real-time video processing much faster!
 *   **Code Scaffold**:
@@ -476,7 +511,7 @@ We measure how similar two facial passports are.
 #### **Method: `recognize`**
 We search our database of known teachers/students to find a match.
 
-##### **TODO 10a: Compare to Stored Database**
+##### **TODO 5a: Compare to Stored Database**
 *   **The Logic**: Compare our unknown face embedding against all embeddings stored in the database.
 *   **Code Scaffold**:
     ```python
@@ -485,7 +520,7 @@ We search our database of known teachers/students to find a match.
 *   **Cheat Sheet**:
     *   Compare `embedding` (input face) with the current database item `known_embedding` inside the loop.
 
-##### **TODO 10b: Update Best Match**
+##### **TODO 5b: Update Best Match**
 *   **The Logic**: If the similarity score is the highest we've seen so far, store it along with the person's name.
 *   **Code Scaffold**:
     ```python
@@ -498,7 +533,7 @@ We search our database of known teachers/students to find a match.
     *   Update `best_similarity = similarity`.
     *   Update `best_match = name`.
 
-##### **TODO 10c: Apply Threshold**
+##### **TODO 5c: Apply Threshold**
 *   **The Logic**: The threshold is a cutoff score. If the best similarity is below this cutoff (e.g., 0.60), we declare the face "Unknown". This is like a security guard refusing entry if someone's photo ID doesn't look at least 60% similar to them. This is critical to prevent false recognition of visitors or students not in our database.
 *   **Code Scaffold**:
     ```python
