@@ -7,6 +7,7 @@ import logging
 import argparse
 import sys
 import os
+import streamlit as st
 from pathlib import Path
 
 # Add src to path
@@ -151,10 +152,11 @@ class FaceRecognitionApp:
             frame (np.ndarray): Input frame
             
         Returns:
-            np.ndarray: Processed frame with annotations
+            tuple: (Processed frame with annotations, List of detected names)
         """
         # Detect faces
         faces = self.detector.detect(frame)
+        detected_names = []
         
         # Process each detected face
         for (x, y, w, h) in faces:
@@ -164,6 +166,9 @@ class FaceRecognitionApp:
             # Recognize face
             name, confidence = self.recognizer.recognize(face_roi)
             
+            if name:
+                detected_names.append(name)
+                
             # Draw bounding box
             cv2.rectangle(frame, (x, y), (x+w, y+h), self.bbox_color, self.thickness)
             
@@ -189,59 +194,177 @@ class FaceRecognitionApp:
                 cv2.FONT_HERSHEY_SIMPLEX, self.font_scale, self.text_color, self.thickness
             )
         
-        return frame
+        return frame, detected_names
     
     def run(self):
         """
-        Run the face recognition application
+        Run the face recognition application using Streamlit
         """
-        if not self.initialize():
-            logger.error("Initialization failed")
-            return
+        st.set_page_config(page_title="Classroom Attendance App", layout="wide")
+        st.title("Classroom Attendance App")
         
-        self.running = True
-        logger.info("Starting face recognition... Press 'q' to quit")
+        mode = st.sidebar.radio("Mode:", ["Attendance", "Manage Students", "Settings"])
         
-        try:
-            while self.running:
-                # Read frame from camera
-                ret, frame = self.camera.read()
+        if mode == "Attendance":
+            st.header("Live Classroom Attendance")
+            st.write("Point the webcam at the classroom entrance.")
+            
+            if not getattr(self, '_initialized', False):
+                if not self.initialize():
+                    st.error("Initialization failed. Check logs.")
+                    return
+                self._initialized = True
                 
-                if not ret:
-                    logger.error("Failed to read frame from camera")
-                    break
+            if not self.recognizer or not self.recognizer.known_faces:
+                st.warning("No students in the database. Please add students in 'Manage Students' mode first.")
+            else:
+                st.info(f"🚀 Active Inference Engine: **{getattr(self.recognizer, 'active_accelerator', 'Unknown')}** | 🎯 Matching Threshold: **{self.recognizer.similarity_threshold:.2f}**")
+            
+            run_camera = st.checkbox("Turn On Camera")
+            
+            frame_placeholder = st.empty()
+            present_students_placeholder = st.empty()
+            
+            present_students = set()
+            
+            if run_camera:
+                self.running = True
+                try:
+                    while self.running:
+                        ret, frame = self.camera.read()
+                        if not ret:
+                            st.error("Failed to read from webcam.")
+                            break
+                        
+                        processed_frame, detected_names = self.process_frame(frame)
+                        
+                        for name in detected_names:
+                            present_students.add(name)
+                        
+                        frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                        frame_placeholder.image(frame_rgb, channels="RGB")
+                        
+                        with present_students_placeholder.container():
+                            st.subheader("Present Students:")
+                            for student in present_students:
+                                st.write(f"✅ {student}")
+                                
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                finally:
+                    if self.camera:
+                        self.camera.release()
+                    self._initialized = False
+
+        elif mode == "Manage Students":
+            st.header("Manage Student Database")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Add Student")
+                new_name = st.text_input("Student Name")
+                input_method = st.radio("Input Method", ["Upload Photos", "Take Photos (Camera)"])
+                images_data = []
                 
-                # Process frame
-                processed_frame = self.process_frame(frame)
+                if input_method == "Upload Photos":
+                    st.info("Please upload exactly 3 photos of the student at different angles.")
+                    uploaded_files = st.file_uploader("Choose 3 photos", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+                    if uploaded_files and len(uploaded_files) == 3:
+                        images_data = [f.getvalue() for f in uploaded_files]
+                    elif uploaded_files and len(uploaded_files) != 3:
+                        st.warning(f"Please upload exactly 3 photos. You uploaded {len(uploaded_files) if uploaded_files else 0}.")
+                else:
+                    st.info("Please take 3 photos of the student at different angles.")
+                    cam1 = st.camera_input("Photo 1 (Front)", key="cam1")
+                    cam2 = st.camera_input("Photo 2 (Slightly Left)", key="cam2")
+                    cam3 = st.camera_input("Photo 3 (Slightly Right)", key="cam3")
+                    
+                    if cam1 and cam2 and cam3:
+                        images_data = [cam1.getvalue(), cam2.getvalue(), cam3.getvalue()]
+                        
+                if st.button("Save Student") and new_name and len(images_data) == 3:
+                    import numpy as np
+                    embeddings = []
+                    
+                    if not getattr(self, '_initialized', False):
+                        self.initialize()
+                        self._initialized = True
+                        
+                    for i, bytes_data in enumerate(images_data):
+                        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+                        faces = self.detector.detect(cv2_img)
+                        if len(faces) == 0:
+                            st.error(f"No face detected in photo {i+1}!")
+                        else:
+                            x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                            cropped_face = cv2_img[y:y+h, x:x+w]
+                            embedding = self.recognizer.get_embedding(cropped_face)
+                            if embedding is not None:
+                                embeddings.append(embedding)
+                                
+                    if len(embeddings) == 3:
+                        avg_embedding = np.mean(embeddings, axis=0)
+                        if new_name not in self.recognizer.known_faces:
+                            self.recognizer.known_faces[new_name] = []
+                        self.recognizer.known_faces[new_name].append(avg_embedding)
+                        self.recognizer.save_database()
+                        st.success(f"Successfully saved {new_name} to database using 3 photos!")
+                        
+            with col2:
+                st.subheader("Delete Student")
+                if not getattr(self, '_initialized', False):
+                    self.initialize()
+                    self._initialized = True
+                    
+                student_names = self.recognizer.list_known_faces()
+                if student_names:
+                    student_to_delete = st.selectbox("Select a student to remove", student_names)
+                    if st.button("Remove"):
+                        self.recognizer.remove_face(student_to_delete)
+                        self.recognizer.save_database()
+                        st.success(f"Removed {student_to_delete} from database.")
+                        st.rerun()
+                else:
+                    st.info("No students in database.")
+
+        elif mode == "Settings":
+            st.header("Settings")
+            if "settings_success_msg" in st.session_state:
+                st.success(st.session_state.settings_success_msg)
+                del st.session_state.settings_success_msg
                 
-                # Add FPS counter if enabled
-                if self.show_fps:
-                    fps = self.camera.get_fps()
-                    fps_text = f"FPS: {fps:.1f}"
-                    cv2.putText(
-                        processed_frame, fps_text, (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2
-                    )
+            st.subheader("Engine Configuration")
+            current_method = self.config.get('face_detection', {}).get('method', 'haar')
+            det_method = st.selectbox("Detection Method", ["haar", "dnn"], index=0 if current_method == 'haar' else 1)
+            
+            sim_thresh = st.slider("Matching Threshold", 0.0, 1.0, 
+                float(self.config.get('face_recognition', {}).get('similarity_threshold', 0.6)))
                 
-                # Display frame
-                cv2.imshow('Face Recognition', processed_frame)
+            if st.button("Save Configuration"):
+                self.config['face_detection']['method'] = det_method
+                self.config['face_recognition']['similarity_threshold'] = sim_thresh
+                if getattr(self, 'recognizer', None):
+                    self.recognizer.similarity_threshold = sim_thresh
+                st.session_state.settings_success_msg = "Configuration updated!"
+                st.rerun()
                 
-                # Handle keyboard input
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
-                    logger.info("Quit requested")
-                    break
-                elif key == ord('s'):
-                    # Save current frame
-                    filename = f"capture_{cv2.getTickCount()}.jpg"
-                    cv2.imwrite(filename, processed_frame)
-                    logger.info(f"Saved frame to {filename}")
-                
-        except KeyboardInterrupt:
-            logger.info("Interrupted by user")
-        
-        finally:
-            self.cleanup()
+            st.markdown("---")
+            st.subheader("Update AI Engine Model")
+            st.write("Upload a new `.keras` or `.h5` model to replace the current facial recognition engine.")
+            uploaded_model = st.file_uploader("Upload a model file", type=["keras", "h5", "tflite"])
+            
+            if uploaded_model is not None:
+                if st.button("Apply New Model"):
+                    os.makedirs(os.path.join("src", "models"), exist_ok=True)
+                    model_path = os.path.join("src", "models", "custom_model." + uploaded_model.name.split('.')[-1])
+                    with open(model_path, "wb") as f:
+                        f.write(uploaded_model.getbuffer())
+                        
+                    self.config['face_recognition']['model_path'] = model_path
+                    # Clear initialization to reload model
+                    self._initialized = False
+                    st.session_state.settings_success_msg = "New model successfully applied and converted to LiteRT!"
+                    st.rerun()
     
     def cleanup(self):
         """Clean up resources"""
