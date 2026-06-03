@@ -5,3 +5,4 @@ outputs/
 ~$*.pptx
 **/.ipynb_checkpoints/*
 fix_*.py
+*.pyc

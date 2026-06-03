@@ -339,16 +339,6 @@ class FaceRecognizer:
             #           HINT: numpy arrays have a .flatten() method.
             embedding = embedding.flatten()
 
-            # WHY: L2 normalization is like shrinking or stretching the passport list
-            #      so its overall mathematical length is exactly 1.0. When all database
-            #      passports are normalized to 1.0, comparing them is super fast: we just
-            #      multiply corresponding numbers and add them up, without any complex
-            #      division later.
-            #
-            # TODO 8c: L2-normalise the embedding by dividing it by its norm.
-            #           HINT: np.linalg.norm(embedding) returns the L2 norm.
-            embedding = embedding / np.linalg.norm(embedding)
-
             return embedding
 
         except Exception as e:
