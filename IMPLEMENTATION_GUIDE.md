@@ -25,9 +25,9 @@ Instead, we use **Metric Learning** (specifically **FaceNet**).
 Here are the key concepts explained using simple, classroom-friendly analogies:
 
 #### 1. Face Embeddings (The "Facial Passport")
-> **Analogy**: Imagine a passport that doesn't show your photo, but instead lists $256$ precise numbers describing your facial structure (e.g., distance between eyes, width of nose, height of forehead). 
+> **Analogy**: Imagine a passport that doesn't show your photo, but instead lists $128$ precise numbers describing your facial structure (e.g., distance between eyes, width of nose, height of forehead). 
 > 
-> A neural network acts as the passport officer. It takes a raw picture and translates it into this **256-dimensional vector** (a list of 256 decimal numbers). If two pictures are of the same person, their facial passports will contain very similar numbers.
+> A neural network acts as the passport officer. It takes a raw picture and translates it into this **128-dimensional vector** (a list of 128 decimal numbers). If two pictures are of the same person, their facial passports will contain very similar numbers.
 
 #### 2. Siamese Networks (The "Shared Brain")
 > **Analogy**: Imagine three identical clone workers working at three desks. They share the exact same brain, memory, and skills.
@@ -207,7 +207,7 @@ We will build the face embedding model using Keras.
     *   Set this property to `True`.
 
 ##### **TODO 3c: Build the Embedding Head**
-*   **The Logic**: Connect the input, preprocessing, backbone, pooling, and Dense projection layers together in a functional pipeline. Add custom layers to the end of the backbone whose job is to shrink the backbone's complex visual data into our final 256-number facial passport list.
+*   **The Logic**: Connect the input, preprocessing, backbone, pooling, and Dense projection layers together in a functional pipeline. Add custom layers to the end of the backbone whose job is to shrink the backbone's complex visual data into our final 128-number facial passport list.
 *   **Code Scaffold**:
     ```python
     inputs  = layers.Input((224, 224, 3))
@@ -221,7 +221,7 @@ We will build the face embedding model using Keras.
     ```
 *   **Cheat Sheet**:
     *   Set `training=False` inside the `base_model` call (this ensures Batch Normalization layers don't update their sliding statistics during training).
-    *   The final `layers.Dense` layer output size should be `256` (our final embedding size).
+    *   The final `layers.Dense` layer output size should be `128` (our final embedding size).
 
 ---
 
@@ -229,7 +229,7 @@ We will build the face embedding model using Keras.
 Now we implement the custom Triplet Loss mathematical layer.
 
 ##### **TODO 4a & 4b: Compute Positive and Negative Squared Distances**
-*   **The Logic**: Calculate the straight-line distance between two facial passports. This is like finding the distance between two points on a graph: for each of the 256 numbers, find the difference, square it (to remove negative signs), and add them all up.
+*   **The Logic**: Calculate the straight-line distance between two facial passports. This is like finding the distance between two points on a graph: for each of the 128 numbers, find the difference, square it (to remove negative signs), and add them all up.
 *   **Code Scaffold**:
     ```python
     pos_dist = tf.reduce_sum(tf.square(anchor - positive), axis=___)
@@ -237,7 +237,7 @@ Now we implement the custom Triplet Loss mathematical layer.
     ```
 *   **Cheat Sheet**:
     *   Use `tf.square(difference)` to square the values.
-    *   Use `tf.reduce_sum(..., axis=-1)` to sum along the embedding dimension (the last axis, which contains the 256 elements).
+    *   Use `tf.reduce_sum(..., axis=-1)` to sum along the embedding dimension (the last axis, which contains the 128 elements).
 
 ##### **TODO 4c: Compute Basic Loss**
 *   **The Logic**: Determine if the positive is closer than the negative by at least our safety margin.
@@ -281,7 +281,7 @@ Now we implement the custom Triplet Loss mathematical layer.
 We measure how well-separated our face clusters are using a **Nearest-Neighbor classifier (1-NN)**. Think of this as a simple yearbook lookup: it takes a new face passport and searches our database to find the single closest passport, matching the identity.
 
 ##### **TODO 6a: Generate Embeddings**
-*   **The Logic**: Extract the 256-number facial passports for all images in the train and validation sets.
+*   **The Logic**: Extract the 128-number facial passports for all images in the train and validation sets.
 *   **Code Scaffold**:
     ```python
     train_embeddings = embedding_model.predict(X_train, batch_size=___)
@@ -330,15 +330,15 @@ Now let's break down the cost of *inference* (running the model on a single came
 
 **1. Multiplications & Additions (Computational Cost)**
 For every face detected, the pipeline has two stages:
-*   **Neural Network Run:** Pushing a 224x224 image through our model to generate the 256-number passport requires exactly **1 Guessing Phase (Forward Pass)** (~300 Million multiplications and additions). There is no learning backward pass during inference!
-*   **Passport Comparison:** Comparing the new 256-number passport to a known person's passport in our database is super fast: we just multiply each of the 256 numbers together and add up the results (256 multiplications and additions per person in our database). For a database of $N$ students, the cost is $256 \times N$ calculations.
+*   **Neural Network Run:** Pushing a 224x224 image through our model to generate the 128-number passport requires exactly **1 Guessing Phase (Forward Pass)** (~300 Million multiplications and additions). There is no learning backward pass during inference!
+*   **Passport Comparison:** Comparing the new 128-number passport to a known person's passport in our database is super fast: we just multiply each of the 128 numbers together and add up the results (128 multiplications and additions per person in our database). For a database of $N$ students, the cost is $128 \times N$ calculations.
 
 **2. Memory Analysis (RAM Cost)**
 *   Unlike training, which must store all intermediate math steps across a batch of 32 images (requiring Gigabytes of space), inference only processes **1 frame at a time**.
 *   Furthermore, the computer can instantly throw away the math steps for a layer as soon as it computes the next layer. This drops memory requirements from Gigabytes down to just a few Megabytes!
 
 **The Hardware Insight:**
-Running the neural network to get the passport (~300 Million calculations) completely dwarfs the database search (e.g., just $2.56$ Million calculations for a database of 10,000 students). This explains why we want a GPU or NPU for the network, while the CPU easily handles the database math. The low memory footprint of inference is why it can run smoothly on standard laptops!
+Running the neural network to get the passport (~300 Million calculations) completely dwarfs the database search (e.g., just $1.28$ Million calculations for a database of 10,000 students). This explains why we want a GPU or NPU for the network, while the CPU easily handles the database math. The low memory footprint of inference is why it can run smoothly on standard laptops!
 
 ### 🏎️ Software Optimizations (Translation & Compression)
 Standard neural network models are saved in formats designed for editing and training (like Keras `.keras`). To run them quickly on edge hardware, we optimize them:
@@ -427,7 +427,7 @@ We crop a face out of our video feed and must format it to match what our traine
 ---
 
 #### **Method: `get_embedding`**
-We run the preprocessed face through the network to generate its 256-D passport.
+We run the preprocessed face through the network to generate its 128-D passport.
 
 ##### **TODO 8a: Predict Embedding**
 *   **The Logic**: Pass the preprocessed image batch to the model. We explicitly disable logging printouts because showing a progress bar inside a real-time video stream loop will freeze the frame rate.
@@ -439,7 +439,7 @@ We run the preprocessed face through the network to generate its 256-D passport.
     *   Set `verbose=0`.
 
 ##### **TODO 8b: Flatten Array**
-*   **The Logic**: The model's prediction returns a 2D batch tensor of shape `(1, 256)`. We need a 1D vector of shape `(256,)` to perform our database math.
+*   **The Logic**: The model's prediction returns a 2D batch tensor of shape `(1, 128)`. We need a 1D vector of shape `(128,)` to perform our database math.
 *   **Code Scaffold**:
     ```python
     embedding = embedding.___()
