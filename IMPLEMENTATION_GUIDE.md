@@ -463,6 +463,7 @@ We measure how similar two facial passports are.
 
 ##### **TODO 9: Compute Dot Product**
 *   **The Logic**: Since the passports are scaled to a length of 1.0, finding similarity is just multiplying the corresponding numbers in the two lists and adding them up (the dot product). The higher the sum (closer to 1.0), the more similar the faces.
+    > 💡 **Euclidean Distance vs. Cosine Similarity**: You might notice we trained the model using Euclidean Distance (in the Triplet Loss) but are matching faces using Cosine Similarity! This is because when vectors are L2-normalized, they are mathematically equivalent: $Distance^2 = 2 - 2 \times CosineSimilarity$. We swap to Cosine Similarity (a simple dot product) for inference because it takes far fewer CPU cycles than computing square roots, making real-time video processing much faster!
 *   **Code Scaffold**:
     ```python
     return np.dot(___, ___)

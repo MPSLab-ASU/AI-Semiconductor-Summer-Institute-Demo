@@ -396,6 +396,10 @@ class FaceRecognizer:
         # WHY: Since both passports are scaled to a length of 1.0, similarity is just a
         #      dot product (multiply the 128 numbers pairwise and add them up). This takes
         #      only 128 multiplications and additions per person, which runs incredibly fast!
+        #      (Note: Our model was trained using Euclidean Distance, but when vectors
+        #      are L2-normalized, minimizing Euclidean Distance is mathematically identical
+        #      to maximizing Cosine Similarity. We swap to Cosine Similarity here purely
+        #      to save CPU cycles during real-time inference!)
         #
         # TODO 9: Return the dot product of embedding1 and embedding2.
         #         HINT: np.dot(a, b) computes the dot product of two vectors.
