@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class FaceRecognizer:
     """
-    Face recognition using a MobileNetV2 embedding model.
+    Face recognition using a MobileNetV3Small embedding model.
 
     The recognition pipeline is:
         raw face image
@@ -221,11 +221,11 @@ class FaceRecognizer:
     # ★ STUDENT SECTION — complete the four functions below ★
     # -----------------------------------------------------------------------
 
-    def preprocess_face(self, face_image, target_size=(160, 160)):
+    def preprocess_face(self, face_image, target_size=(224, 224)):
         """
         Prepare a face crop for model input.
 
-        The model was trained on 160×160 RGB images with pixel values in [0, 1].
+        The model was trained on 224x224 RGB images with pixel values in [0, 1].
         OpenCV reads images in BGR format, so we must convert the color order.
 
         Args:
@@ -235,7 +235,7 @@ class FaceRecognizer:
         Returns:
             np.ndarray: Shape (1, height, width, 3), dtype float32, values in [0, 1].
         """
-        # WHY: The network was trained on a fixed grid size. Resizing to 160x160
+        # WHY: The network was trained on a fixed grid size. Resizing to 224x224
         #      limits the number of multiplications and additions the hardware
         #      needs to calculate per second, saving power and running faster.
         #
