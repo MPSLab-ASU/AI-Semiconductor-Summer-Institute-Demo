@@ -142,11 +142,14 @@ class FaceRecognizer:
             
             try:
                 # Use standard LiteRT Interpreter for python inference
-                try:
+                if os.environ.get('DISABLE_TENSORFLOW') == '1':
                     from ai_edge_litert.interpreter import Interpreter
-                except ImportError:
-                    import tensorflow as tf
-                    Interpreter = tf.lite.Interpreter
+                else:
+                    try:
+                        from ai_edge_litert.interpreter import Interpreter
+                    except ImportError:
+                        import tensorflow as tf
+                        Interpreter = tf.lite.Interpreter
                 
                 self.interpreter = Interpreter(model_path=self.model_path)
                 self.interpreter.allocate_tensors()

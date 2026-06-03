@@ -20,6 +20,8 @@ def configure_gpu(config):
         return False
     
     try:
+        if os.environ.get('DISABLE_TENSORFLOW') == '1':
+            raise ImportError("TensorFlow is manually disabled via config.")
         import tensorflow as tf
         
         # List available GPUs
@@ -70,6 +72,8 @@ def get_gpu_info():
     }
     
     try:
+        if os.environ.get('DISABLE_TENSORFLOW') == '1':
+            raise ImportError("TensorFlow is manually disabled via config.")
         import tensorflow as tf
         gpus = tf.config.list_physical_devices('GPU')
         

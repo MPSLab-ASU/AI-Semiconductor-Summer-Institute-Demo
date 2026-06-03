@@ -64,6 +64,11 @@ class FaceRecognitionApp:
                 config = yaml.safe_load(f)
             logger.info(f"Loaded configuration from {config_path}")
             
+            # Check if TensorFlow should be manually disabled
+            if config.get('face_recognition', {}).get('disable_tensorflow', False):
+                os.environ['DISABLE_TENSORFLOW'] = '1'
+                logger.info("TensorFlow has been manually disabled in config.yaml")
+
             # Resolve relative paths relative to src directory
             src_dir = Path(__file__).parent
             

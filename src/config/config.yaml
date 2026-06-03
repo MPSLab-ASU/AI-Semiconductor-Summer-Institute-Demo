@@ -32,6 +32,7 @@ face_recognition:
   embedding_size: 128
   model_path: models/custom_model.tflite
   similarity_threshold: 0.89
+  disable_tensorflow: false
 gpu:
   device_id: 0
   enabled: true
