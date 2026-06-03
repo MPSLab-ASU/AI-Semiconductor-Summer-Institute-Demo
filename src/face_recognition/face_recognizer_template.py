@@ -77,35 +77,112 @@ class FaceRecognizer:
             )
             return
 
-        # A directory → TF-TRT SavedModel; a file → regular Keras model
-        if os.path.isdir(model_path):
-            self._load_trt_model(model_path)
+        if model_path.endswith('.tflite'):
+            self.model_path = model_path
+            self._init_litert_model(self.config.get("accelerator", "Auto"))
         else:
             self._load_keras_model(model_path)
 
-    def _load_trt_model(self, model_path):
-        """Load a TF-TRT SavedModel (optimised for GPU inference)."""
+    def _init_litert_model(self, requested_accelerator):
+        """Initializes the ai_edge_litert CompiledModel with fallback."""
         try:
-            import tensorflow as tf
-
-            self.model = tf.saved_model.load(model_path)
-            self.inference_fn = self.model.signatures["serving_default"]
-            self.is_trt = True
-            self.is_tflite = False
-            logger.info(f"Loaded TF-TRT SavedModel from {model_path}")
-        except Exception as e:
-            logger.error(f"Error loading TF-TRT model: {e}")
+            import ai_edge_litert as litert
+            from ai_edge_litert.compiled_model import CompiledModel, HardwareAccelerator
+        except ImportError:
+            logger.error("ai_edge_litert not installed. Inference will fail.")
             self.model = None
+            return
+
+        self.active_accelerator = "None"
+        
+        def try_npu():
+            logger.info("Attempting to load model on NPU...")
+            if hasattr(HardwareAccelerator, 'NPU'):
+                self.model = CompiledModel.from_file(self.model_path, hardware_accel=HardwareAccelerator.NPU)
+                self.active_accelerator = "NPU"
+            else:
+                raise Exception("NPU is not supported by this version of ai_edge_litert.")
+            
+        def try_gpu():
+            logger.info("Attempting to load model on GPU...")
+            self.model = CompiledModel.from_file(self.model_path, hardware_accel=HardwareAccelerator.GPU)
+            self.active_accelerator = "GPU"
+            
+        def try_cpu():
+            logger.info("Falling back to CPU...")
+            self.model = CompiledModel.from_file(self.model_path, hardware_accel=HardwareAccelerator.CPU)
+            self.active_accelerator = "CPU"
+
+        try:
+            if requested_accelerator == "NPU":
+                try_npu()
+            elif requested_accelerator == "GPU":
+                try_gpu()
+            elif requested_accelerator == "CPU":
+                try_cpu()
+            else:
+                try:
+                    try_npu()
+                except Exception as e:
+                    logger.debug(f"NPU init failed: {e}")
+                    try:
+                        try_gpu()
+                    except Exception as e2:
+                        logger.debug(f"GPU init failed: {e2}")
+                        try_cpu()
+        except Exception as e:
+            logger.error(f"Failed to load model on {requested_accelerator}: {e}")
+            try_cpu()
+            self.active_accelerator = f"CPU (Fallback)"
+            
+        if self.model:
+            self.is_litert = True
+            self.is_trt = False
+            
+            try:
+                # Use standard LiteRT Interpreter for python inference
+                import tensorflow as tf
+                self.interpreter = tf.lite.Interpreter(model_path=self.model_path)
+                self.interpreter.allocate_tensors()
+                self.litert_signature = self.interpreter.get_signature_runner()
+                self.litert_sig_name = "serving_default"
+            except Exception as e:
+                logger.error(f"Failed to initialize LiteRT interpreter: {e}")
+                self.model = None
+                
+            logger.info(f"Loaded LiteRT model on {self.active_accelerator}")
 
     def _load_keras_model(self, model_path):
-        """Load a standard Keras model (.keras / .h5)."""
+        """Load a standard Keras model (.keras / .h5) and convert to LiteRT."""
         try:
+            import tensorflow as tf
             import keras
+            import os
 
-            self.model = keras.models.load_model(model_path)
-            logger.info(f"Loaded Keras 3 model from {model_path}")
-            logger.info(f"Model input shape: {self.model.input_shape}")
-            logger.info(f"Model output shape: {self.model.output_shape}")
+            tflite_path = model_path + ".tflite"
+            
+            if not os.path.exists(tflite_path):
+                # Suppress verbose TF logging during conversion
+                os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+                tf.get_logger().setLevel('ERROR')
+                
+                logger.info(f"Loading Keras model from {model_path} for LiteRT conversion")
+                keras_model = keras.models.load_model(model_path)
+                
+                logger.info("Converting Keras model to TFLite (this may take a moment)...")
+                converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
+                tflite_model = converter.convert()
+                
+                with open(tflite_path, "wb") as f:
+                    f.write(tflite_model)
+                
+                logger.info(f"Saved converted TFLite model to {tflite_path}")
+            else:
+                logger.info(f"Found cached TFLite model at {tflite_path}, skipping conversion.")
+            
+            self.model_path = tflite_path
+            self._init_litert_model(self.config.get("accelerator", "Auto"))
+            
         except Exception as e:
             logger.error(f"Error loading Keras model: {e}")
             self.model = None
@@ -212,6 +289,31 @@ class FaceRecognizer:
         # The TRT path has its own inference function — skip the standard path.
         if getattr(self, "is_trt", False):
             return self._get_trt_embedding(face_image)
+            
+        if getattr(self, "is_litert", False):
+            if self.model is None or not hasattr(self, "litert_signature"):
+                return None
+            try:
+                face_input = self.preprocess_face(face_image)
+                
+                # Execute using LiteRT SignatureRunner
+                input_details = self.litert_signature.get_input_details()
+                input_name = list(input_details.keys())[0]
+                output = self.litert_signature(**{input_name: face_input})
+                
+                if isinstance(output, dict):
+                    embedding = list(output.values())[0][0]
+                elif isinstance(output, list) and len(output) > 0:
+                    embedding = output[0][0]
+                else:
+                    embedding = output[0]
+                
+                embedding = embedding.flatten()
+                embedding = embedding / np.linalg.norm(embedding)
+                return embedding
+            except Exception as e:
+                logger.error(f"LiteRT inference error: {e}")
+                return None
 
         if self.model is None:
             return None
@@ -346,7 +448,7 @@ class FaceRecognizer:
                 #
                 # TODO 10b: If this similarity is greater than best_similarity,
                 #           update best_similarity and set best_match = name.
-                # YOUR CODE HERE
+                pass  # YOUR CODE HERE
 
         # WHY: The threshold is our security cutoff. If the best similarity is below this
         #      (e.g., 0.60), we declare the face "Unknown". This is like a security guard
@@ -355,7 +457,7 @@ class FaceRecognizer:
         # TODO 10c: If best_similarity is greater than or equal to
         #           self.similarity_threshold, return (best_match, best_similarity).
         #           Otherwise the face is unrecognised — return (None, best_similarity).
-        # YOUR CODE HERE
+        pass  # YOUR CODE HERE
 
     # -----------------------------------------------------------------------
     # Database helpers — provided for you. No changes needed.
