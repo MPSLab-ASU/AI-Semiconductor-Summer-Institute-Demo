@@ -77,10 +77,7 @@ class FaceRecognizer:
             )
             return
 
-        # A directory → TF-TRT SavedModel; .tflite → LiteRT; .keras/.h5 → Keras to LiteRT
-        if os.path.isdir(model_path):
-            self._load_trt_model(model_path)
-        elif model_path.endswith('.tflite'):
+        if model_path.endswith('.tflite'):
             self.model_path = model_path
             self._init_litert_model(self.config.get("accelerator", "Auto"))
         else:
@@ -139,43 +136,49 @@ class FaceRecognizer:
             self.active_accelerator = f"CPU (Fallback)"
             
         if self.model:
-            self.litert_signature = self.model.get_signature_runner()
             self.is_litert = True
             self.is_trt = False
+            
+            try:
+                # Use standard LiteRT Interpreter for python inference
+                import tensorflow as tf
+                self.interpreter = tf.lite.Interpreter(model_path=self.model_path)
+                self.interpreter.allocate_tensors()
+                self.litert_signature = self.interpreter.get_signature_runner()
+                self.litert_sig_name = "serving_default"
+            except Exception as e:
+                logger.error(f"Failed to initialize LiteRT interpreter: {e}")
+                self.model = None
+                
             logger.info(f"Loaded LiteRT model on {self.active_accelerator}")
-
-    def _load_trt_model(self, model_path):
-        """Load a TF-TRT SavedModel (optimised for GPU inference)."""
-        try:
-            import tensorflow as tf
-
-            self.model = tf.saved_model.load(model_path)
-            self.inference_fn = self.model.signatures["serving_default"]
-            self.is_trt = True
-            self.is_litert = False
-            logger.info(f"Loaded TF-TRT SavedModel from {model_path}")
-        except Exception as e:
-            logger.error(f"Error loading TF-TRT model: {e}")
-            self.model = None
 
     def _load_keras_model(self, model_path):
         """Load a standard Keras model (.keras / .h5) and convert to LiteRT."""
         try:
             import tensorflow as tf
             import keras
+            import os
 
-            logger.info(f"Loading Keras model from {model_path} for LiteRT conversion")
-            keras_model = keras.models.load_model(model_path)
-            
-            logger.info("Converting Keras model to TFLite...")
-            converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
-            tflite_model = converter.convert()
-            
             tflite_path = model_path + ".tflite"
-            with open(tflite_path, "wb") as f:
-                f.write(tflite_model)
             
-            logger.info(f"Saved converted TFLite model to {tflite_path}")
+            if not os.path.exists(tflite_path):
+                # Suppress verbose TF logging during conversion
+                os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+                tf.get_logger().setLevel('ERROR')
+                
+                logger.info(f"Loading Keras model from {model_path} for LiteRT conversion")
+                keras_model = keras.models.load_model(model_path)
+                
+                logger.info("Converting Keras model to TFLite (this may take a moment)...")
+                converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
+                tflite_model = converter.convert()
+                
+                with open(tflite_path, "wb") as f:
+                    f.write(tflite_model)
+                
+                logger.info(f"Saved converted TFLite model to {tflite_path}")
+            else:
+                logger.info(f"Found cached TFLite model at {tflite_path}, skipping conversion.")
             
             self.model_path = tflite_path
             self._init_litert_model(self.config.get("accelerator", "Auto"))
@@ -288,14 +291,23 @@ class FaceRecognizer:
             return self._get_trt_embedding(face_image)
             
         if getattr(self, "is_litert", False):
-            if self.model is None:
+            if self.model is None or not hasattr(self, "litert_signature"):
                 return None
             try:
                 face_input = self.preprocess_face(face_image)
+                
+                # Execute using LiteRT SignatureRunner
                 input_details = self.litert_signature.get_input_details()
                 input_name = list(input_details.keys())[0]
                 output = self.litert_signature(**{input_name: face_input})
-                embedding = list(output.values())[0][0]
+                
+                if isinstance(output, dict):
+                    embedding = list(output.values())[0][0]
+                elif isinstance(output, list) and len(output) > 0:
+                    embedding = output[0][0]
+                else:
+                    embedding = output[0]
+                
                 embedding = embedding.flatten()
                 embedding = embedding / np.linalg.norm(embedding)
                 return embedding

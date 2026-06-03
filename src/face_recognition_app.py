@@ -41,6 +41,7 @@ class FaceRecognitionApp:
         if config_path is None or config_path == 'config/config.yaml':
             config_path = str(Path(__file__).parent / 'config' / 'config.yaml')
             
+        self.config_path = config_path
         self.config = self._load_config(config_path)
         self.camera = None
         self.detector = None
@@ -144,9 +145,31 @@ class FaceRecognitionApp:
         logger.info("Initialization complete")
         return True
     
+    def _inference_worker(self):
+        """Background thread worker that runs heavy ML inference continuously."""
+        import time
+        while getattr(self, 'running', False):
+            frame = getattr(self, 'current_frame_for_inference', None)
+            if frame is not None:
+                # Detect
+                faces = self.detector.detect(frame)
+                names = []
+                for (x, y, w, h) in faces:
+                    face_roi = frame[y:y+h, x:x+w]
+                    name, confidence = self.recognizer.recognize(face_roi)
+                    names.append((name, confidence))
+                
+                # Safely update cached results
+                self.last_faces = faces
+                self.last_names = names
+            
+            # Rate limit inference thread to ~10 FPS to save CPU
+            time.sleep(0.1)
+
     def process_frame(self, frame):
         """
-        Process a single frame
+        Process a single frame for rendering (does NOT run inference).
+        Draws bounding boxes based on the latest background inference results.
         
         Args:
             frame (np.ndarray): Input frame
@@ -154,18 +177,14 @@ class FaceRecognitionApp:
         Returns:
             tuple: (Processed frame with annotations, List of detected names)
         """
-        # Detect faces
-        faces = self.detector.detect(frame)
         detected_names = []
         
-        # Process each detected face
-        for (x, y, w, h) in faces:
-            # Extract face region
-            face_roi = frame[y:y+h, x:x+w]
-            
-            # Recognize face
-            name, confidence = self.recognizer.recognize(face_roi)
-            
+        # Safely get current cached detections
+        faces = getattr(self, 'last_faces', [])
+        names = getattr(self, 'last_names', [])
+        
+        # Process each detected face using cached bounding boxes and labels
+        for (x, y, w, h), (name, confidence) in zip(faces, names):
             if name:
                 detected_names.append(name)
                 
@@ -175,11 +194,11 @@ class FaceRecognitionApp:
             # Prepare label
             if name:
                 label = f"{name}"
-                if self.show_confidence:
+                if getattr(self, 'show_confidence', True):
                     label += f" ({confidence:.2f})"
             else:
                 label = "Unknown"
-                if self.show_confidence and confidence > 0:
+                if getattr(self, 'show_confidence', True) and confidence > 0:
                     label += f" ({confidence:.2f})"
             
             # Draw label background
@@ -218,23 +237,53 @@ class FaceRecognitionApp:
             if not self.recognizer or not self.recognizer.known_faces:
                 st.warning("No students in the database. Please add students in 'Manage Students' mode first.")
             else:
-                st.info(f"🚀 Active Inference Engine: **{getattr(self.recognizer, 'active_accelerator', 'Unknown')}** | 🎯 Matching Threshold: **{self.recognizer.similarity_threshold:.2f}**")
+                detector_method = self.config.get('face_detection', {}).get('method', 'haar').upper()
+                st.info(f"🚀 Active Inference Engine: **{getattr(self.recognizer, 'active_accelerator', 'Unknown')}** | 👁️ Face Detector: **{detector_method}** | 🎯 Matching Threshold: **{self.recognizer.similarity_threshold:.2f}**")
             
-            run_camera = st.checkbox("Turn On Camera")
+            if "camera_running" not in st.session_state:
+                st.session_state.camera_running = False
+                
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Start Camera", use_container_width=True):
+                    st.session_state.camera_running = True
+                    st.rerun()
+            with col2:
+                if st.button("Stop Camera", use_container_width=True, type="primary"):
+                    st.session_state.camera_running = False
+                    if self.camera:
+                        self.camera.release()
+                    self._initialized = False
+                    st.rerun()
             
             frame_placeholder = st.empty()
             present_students_placeholder = st.empty()
             
             present_students = set()
             
-            if run_camera:
+            if st.session_state.camera_running:
                 self.running = True
+                
+                # Start background inference thread
+                self.last_faces = []
+                self.last_names = []
+                self.current_frame_for_inference = None
+                
+                import threading
+                inference_thread = threading.Thread(target=self._inference_worker)
+                inference_thread.daemon = True
+                inference_thread.start()
+                
                 try:
                     while self.running:
                         ret, frame = self.camera.read()
                         if not ret:
                             st.error("Failed to read from webcam.")
                             break
+                            
+                        # Share the latest frame with the inference thread
+                        self.current_frame_for_inference = frame.copy()
+                        self.last_frame = frame.copy()
                         
                         processed_frame, detected_names = self.process_frame(frame)
                         
@@ -250,8 +299,11 @@ class FaceRecognitionApp:
                                 st.write(f"✅ {student}")
                                 
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    # Ignore the Event loop closed error triggered by Streamlit interrupt
+                    if "Event loop is closed" not in str(e):
+                        st.error(f"Error: {e}")
                 finally:
+                    self.running = False
                     if self.camera:
                         self.camera.release()
                     self._initialized = False
@@ -345,6 +397,21 @@ class FaceRecognitionApp:
                 self.config['face_recognition']['similarity_threshold'] = sim_thresh
                 if getattr(self, 'recognizer', None):
                     self.recognizer.similarity_threshold = sim_thresh
+                    
+                # Write back to disk
+                try:
+                    import yaml
+                    with open(self.config_path, 'r') as f:
+                        disk_config = yaml.safe_load(f)
+                    
+                    disk_config['face_detection']['method'] = det_method
+                    disk_config['face_recognition']['similarity_threshold'] = float(sim_thresh)
+                    
+                    with open(self.config_path, 'w') as f:
+                        yaml.dump(disk_config, f, default_flow_style=False)
+                except Exception as e:
+                    logger.error(f"Failed to save config to disk: {e}")
+                    
                 st.session_state.settings_success_msg = "Configuration updated!"
                 st.rerun()
                 
