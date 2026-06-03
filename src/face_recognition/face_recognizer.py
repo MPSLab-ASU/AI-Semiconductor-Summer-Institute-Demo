@@ -142,8 +142,13 @@ class FaceRecognizer:
             
             try:
                 # Use standard LiteRT Interpreter for python inference
-                import tensorflow as tf
-                self.interpreter = tf.lite.Interpreter(model_path=self.model_path)
+                try:
+                    from ai_edge_litert.interpreter import Interpreter
+                except ImportError:
+                    import tensorflow as tf
+                    Interpreter = tf.lite.Interpreter
+                
+                self.interpreter = Interpreter(model_path=self.model_path)
                 self.interpreter.allocate_tensors()
                 self.litert_signature = self.interpreter.get_signature_runner()
                 self.litert_sig_name = "serving_default"
@@ -158,6 +163,12 @@ class FaceRecognizer:
         try:
             import tensorflow as tf
             import keras
+        except ImportError:
+            logger.error("TensorFlow and Keras must be installed to load and convert Keras models (.keras / .h5). Please install tensorflow and keras, or use a .tflite model.")
+            self.model = None
+            return
+
+        try:
             import os
 
             tflite_path = model_path + ".tflite"
@@ -420,7 +431,11 @@ class FaceRecognizer:
         """
         try:
             import tensorflow as tf
+        except ImportError:
+            logger.error("TensorFlow is required for TF-TRT inference.")
+            return None
 
+        try:
             face_input = self.preprocess_face(face_image)
             face_tensor = tf.convert_to_tensor(face_input)
             output = self.inference_fn(face_tensor)
