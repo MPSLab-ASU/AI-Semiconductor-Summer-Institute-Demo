@@ -30,7 +30,7 @@ face_detection:
 face_recognition:
   database_path: data/face_database.pkl
   embedding_size: 128
-  model_path: src/models/custom_model.tflite
+  model_path: models/custom_model.tflite
   similarity_threshold: 0.6
 gpu:
   device_id: 0
