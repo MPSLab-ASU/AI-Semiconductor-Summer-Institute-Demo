@@ -4,3 +4,4 @@ package.json
 outputs/
 ~$*.pptx
 **/.ipynb_checkpoints/*
+fix_*.py
