@@ -70,12 +70,18 @@ class FaceRecognitionApp:
             fd = config.get('face_detection', {})
             for key in ['dnn_model_path', 'dnn_weights_path']:
                 if key in fd and not os.path.isabs(fd[key]):
-                    fd[key] = str(src_dir / fd[key])
+                    val = fd[key]
+                    if val.startswith('src/') or val.startswith('src\\'):
+                        val = val[4:]
+                    fd[key] = str(src_dir / val)
                     
             fr = config.get('face_recognition', {})
             for key in ['model_path', 'database_path']:
                 if key in fr and not os.path.isabs(fr[key]):
-                    fr[key] = str(src_dir / fr[key])
+                    val = fr[key]
+                    if val.startswith('src/') or val.startswith('src\\'):
+                        val = val[4:]
+                    fr[key] = str(src_dir / val)
                     
             return config
         except Exception as e:
@@ -355,10 +361,9 @@ class FaceRecognitionApp:
                                 embeddings.append(embedding)
                                 
                     if len(embeddings) == 3:
-                        avg_embedding = np.mean(embeddings, axis=0)
                         if new_name not in self.recognizer.known_faces:
                             self.recognizer.known_faces[new_name] = []
-                        self.recognizer.known_faces[new_name].append(avg_embedding)
+                        self.recognizer.known_faces[new_name].extend(embeddings)
                         self.recognizer.save_database()
                         st.success(f"Successfully saved {new_name} to database using 3 photos!")
                         
@@ -422,12 +427,18 @@ class FaceRecognitionApp:
             
             if uploaded_model is not None:
                 if st.button("Apply New Model"):
-                    os.makedirs(os.path.join("src", "models"), exist_ok=True)
-                    model_path = os.path.join("src", "models", "custom_model." + uploaded_model.name.split('.')[-1])
-                    with open(model_path, "wb") as f:
+                    src_dir = Path(__file__).parent
+                    models_dir = src_dir / "models"
+                    models_dir.mkdir(exist_ok=True)
+                    
+                    model_filename = "custom_model." + uploaded_model.name.split('.')[-1]
+                    model_abspath = models_dir / model_filename
+                    
+                    with open(model_abspath, "wb") as f:
                         f.write(uploaded_model.getbuffer())
                         
-                    self.config['face_recognition']['model_path'] = model_path
+                    model_relpath = os.path.join("models", model_filename)
+                    self.config['face_recognition']['model_path'] = model_relpath
                     
                     # Write back to disk
                     try:
@@ -437,7 +448,7 @@ class FaceRecognitionApp:
                         
                         if 'face_recognition' not in disk_config:
                             disk_config['face_recognition'] = {}
-                        disk_config['face_recognition']['model_path'] = model_path
+                        disk_config['face_recognition']['model_path'] = model_relpath
                         
                         with open(self.config_path, 'w') as f:
                             yaml.dump(disk_config, f, default_flow_style=False)
