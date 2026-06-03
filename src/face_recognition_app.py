@@ -428,6 +428,22 @@ class FaceRecognitionApp:
                         f.write(uploaded_model.getbuffer())
                         
                     self.config['face_recognition']['model_path'] = model_path
+                    
+                    # Write back to disk
+                    try:
+                        import yaml
+                        with open(self.config_path, 'r') as f:
+                            disk_config = yaml.safe_load(f)
+                        
+                        if 'face_recognition' not in disk_config:
+                            disk_config['face_recognition'] = {}
+                        disk_config['face_recognition']['model_path'] = model_path
+                        
+                        with open(self.config_path, 'w') as f:
+                            yaml.dump(disk_config, f, default_flow_style=False)
+                    except Exception as e:
+                        logger.error(f"Failed to save config to disk: {e}")
+                        
                     # Clear initialization to reload model
                     self._initialized = False
                     st.session_state.settings_success_msg = "New model successfully applied and converted to LiteRT!"
