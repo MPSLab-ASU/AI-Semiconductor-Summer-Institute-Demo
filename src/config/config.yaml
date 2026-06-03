@@ -21,7 +21,7 @@ face_detection:
   dnn_model_path: models/face_detection/deploy.prototxt
   dnn_weights_path: models/face_detection/res10_300x300_ssd_iter_140000.caffemodel
   haar_cascade_path: haarcascade_frontalface_default.xml
-  method: dnn
+  method: haar
   min_neighbors: 5
   min_size:
   - 30

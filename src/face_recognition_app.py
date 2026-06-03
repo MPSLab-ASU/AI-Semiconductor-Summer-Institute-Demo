@@ -150,7 +150,7 @@ class FaceRecognitionApp:
         
         logger.info("Initialization complete")
         return True
-    
+
     def _inference_worker(self):
         """Background thread worker that runs heavy ML inference continuously."""
         import time
@@ -161,8 +161,7 @@ class FaceRecognitionApp:
                 faces = self.detector.detect(frame)
                 names = []
                 for (x, y, w, h) in faces:
-                    face_roi = frame[y:y+h, x:x+w]
-                    name, confidence = self.recognizer.recognize(face_roi)
+                    name, confidence = self.recognizer.recognize(frame,face_coordinates=(x, y, w, h))
                     names.append((name, confidence))
                 
                 # Safely update cached results
@@ -355,8 +354,7 @@ class FaceRecognitionApp:
                             st.error(f"No face detected in photo {i+1}!")
                         else:
                             x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-                            cropped_face = cv2_img[y:y+h, x:x+w]
-                            embedding = self.recognizer.get_embedding(cropped_face)
+                            embedding = self.recognizer.get_embedding(cv2_img, (x, y, w, h))
                             if embedding is not None:
                                 embeddings.append(embedding)
                                 

@@ -28,6 +28,7 @@ class FaceRecognizer:
 
     The recognition pipeline is:
         raw face image
+            → _extract_face()       # Get the cropped image of a face
             → preprocess_face()    # resize + scale values
             → get_embedding()      # run model to get 128-number passport
             → cosine_similarity()  # compare passports using multiplication & addition
@@ -221,6 +222,37 @@ class FaceRecognizer:
     # ★ STUDENT SECTION — complete the four functions below ★
     # -----------------------------------------------------------------------
 
+    def _extract_face(self,full_frame,face_coordinates):
+        """
+        Args:
+            full_frame (np.ndarray): The full image frame.
+            face_coordinates (tuple): The coordinates of the face (x, y, w, h).
+
+        Returns:
+            np.ndarray: A cropped resized face matching training data's aspect ratio
+        """
+        # TODO 1: Implement the face extraction logic.
+        #         Extract face crop matching the training data's aspect ratio.
+        #         The LFW dataset used for training has images of size 125x94.
+        #         When resized to 224x224, faces were stretched horizontally by ~33%.
+        #         To match this, we extract a taller bounding box (aspect ratio 94:125).
+        # WHY:
+        # The model was trained on images with a specific aspect ratio. 
+        # If we don't match that ratio, the model will see stretched or 
+        # compressed faces and won't recognize them properly.
+        x,y,w,h = face_coordinates
+        center_x = x + w // 2
+        center_y = y + h // 2
+        target_w = w
+        target_h = int(w * (125.0 / 94.0))
+        new_x = max(0, center_x - target_w // 2)
+        new_y = max(0, center_y - target_h // 2)
+        frame_h, frame_w = full_frame.shape[:2]
+        new_w = min(target_w, frame_w - new_x)
+        new_h = min(target_h, frame_h - new_y)
+        return full_frame[new_y:new_y+new_h, new_x:new_x+new_w]
+
+
     def preprocess_face(self, face_image, target_size=(224, 224)):
         """
         Prepare a face crop for model input.
@@ -235,11 +267,12 @@ class FaceRecognizer:
         Returns:
             np.ndarray: Shape (1, height, width, 3), dtype float32, values in [0, 1].
         """
+
         # WHY: The network was trained on a fixed grid size. Resizing to 224x224
         #      limits the number of multiplications and additions the hardware
         #      needs to calculate per second, saving power and running faster.
         #
-        # TODO 7a: Resize face_image to target_size using cv2.resize.
+        # TODO 2a: Resize face_image to target_size using cv2.resize.
         #           cv2.resize takes (image, (width, height)).
         face_resized = cv2.resize(face_image, target_size)
 
@@ -248,7 +281,7 @@ class FaceRecognizer:
         #      through a filter where red and blue are swapped (a red apple looks blue),
         #      resulting in a corrupted passport.
         #
-        # TODO 7b: Convert face_resized from BGR to RGB.
+        # TODO 2b: Convert face_resized from BGR to RGB.
         #           Use cv2.cvtColor with the correct conversion code.
         #           HINT: the constant you need is cv2.COLOR_BGR2RGB
         face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
@@ -257,7 +290,7 @@ class FaceRecognizer:
         #      Dividing by 255.0 converts them to decimal numbers between 0.0 and 1.0,
         #      which makes calculations stable and easier for the computer chip to process.
         #
-        # TODO 7c: Cast face_rgb to float32 and divide by 255.0 so values are
+        # TODO 2c: Cast face_rgb to float32 and divide by 255.0 so values are
         #           in the range [0.0, 1.0].
         face_normalized = face_rgb.astype(np.float32) / 255.0
 
@@ -265,13 +298,13 @@ class FaceRecognizer:
         #      we only have one face image, we must place it inside a "folder of 1 image"
         #      (expanding the array at axis=0) so the model knows how to read it.
         #
-        # TODO 7d: Add a batch dimension at axis=0 using np.expand_dims.
+        # TODO 2d: Add a batch dimension at axis=0 using np.expand_dims.
         #           HINT: np.expand_dims(array, axis=0)
         face_batch = np.expand_dims(face_normalized, axis=0)
 
         return face_batch
 
-    def get_embedding(self, face_image):
+    def get_embedding(self, full_frame, face_coordinates=None):
         """
         Run the neural network and return a 128-dimensional face embedding.
 
@@ -280,12 +313,22 @@ class FaceRecognizer:
         different people produce very different ones.
 
         Args:
-            face_image (np.ndarray): Face crop (BGR format, any size).
+            face_image (np.ndarray): Face crop (BGR format, any size) or full frame if face_coordinates is provided.
+            face_coordinates (tuple, optional): (x, y, w, h) bounding box of the face.
 
         Returns:
             np.ndarray: 1-D array of shape (embedding_size,), L2-normalised,
                         or None if the model is not loaded.
         """
+
+        # Use the extract_face helper to crop the face from the full frame
+        if face_coordinates is not None:
+            # TODO 2a: Use the extract faces so that only the photo of the face is
+            # passed to our model
+            face_image = self._extract_face(full_frame, face_coordinates)
+        else:
+            face_image = full_frame
+
         # The TRT path has its own inference function — skip the standard path.
         if getattr(self, "is_trt", False):
             return self._get_trt_embedding(face_image)
@@ -327,7 +370,7 @@ class FaceRecognizer:
             #      a list of 128 raw numbers. For real-time video, this must happen in
             #      less than 30 milliseconds!
             #
-            # TODO 8a: Call self.model.predict on face_input.
+            # TODO 3b: Call self.model.predict on face_input.
             #           Pass verbose=0 to suppress progress bar output.
             #           (Printing a progress bar for every video frame ruins CLI output!)
             embedding = self.model.predict(face_input, verbose=0)
@@ -335,7 +378,7 @@ class FaceRecognizer:
             # WHY: The output is a batch folder containing one passport list.
             #      We flatten it to a single 1-D list of 128 numbers (our Facial Passport).
             #
-            # TODO 8b: Flatten the embedding to a 1-D array.
+            # TODO 3c: Flatten the embedding to a 1-D array.
             #           HINT: numpy arrays have a .flatten() method.
             embedding = embedding.flatten()
 
@@ -391,11 +434,11 @@ class FaceRecognizer:
         #      to maximizing Cosine Similarity. We swap to Cosine Similarity here purely
         #      to save CPU cycles during real-time inference!)
         #
-        # TODO 9: Return the dot product of embedding1 and embedding2.
+        # TODO 4: Return the dot product of embedding1 and embedding2.
         #         HINT: np.dot(a, b) computes the dot product of two vectors.
         return np.dot(embedding1, embedding2)
 
-    def recognize(self, face_image):
+    def recognize(self, face_image, face_coordinates=None):
         """
         Identify who is in the face image.
 
@@ -406,7 +449,8 @@ class FaceRecognizer:
              threshold (otherwise label as "Unknown").
 
         Args:
-            face_image (np.ndarray): Face crop (BGR format).
+            face_image (np.ndarray): Face crop (BGR format) or full frame if face_coordinates is provided.
+            face_coordinates (tuple, optional): (x, y, w, h) bounding box of the face.
 
         Returns:
             tuple: (name, confidence) where name is a string (or None if
@@ -416,7 +460,7 @@ class FaceRecognizer:
             return None, 0
 
         # Get the embedding for the face we want to identify.
-        embedding = self.get_embedding(face_image)
+        embedding = self.get_embedding(face_image, face_coordinates)
 
         if embedding is None:
             return None, 0
@@ -431,7 +475,7 @@ class FaceRecognizer:
 
                 # WHY: Compare the video face passport with one stored in our database.
                 #
-                # TODO 10a: Compute the cosine similarity between `embedding`
+                # TODO 5a: Compute the cosine similarity between `embedding`
                 #           (the face we want to identify) and `known_embedding`
                 #           (one stored embedding for `name`).
                 #           Use self.cosine_similarity().
@@ -440,7 +484,7 @@ class FaceRecognizer:
                 # WHY: We perform a "yearbook lookup" (Nearest Neighbor search) to find
                 #      which stored face matches our target face with the highest similarity score.
                 #
-                # TODO 10b: If this similarity is greater than best_similarity,
+                # TODO 5b: If this similarity is greater than best_similarity,
                 #           update best_similarity and set best_match = name.
                 if similarity > best_similarity:
                     best_similarity = similarity
@@ -450,7 +494,7 @@ class FaceRecognizer:
         #      (e.g., 0.60), we declare the face "Unknown". This is like a security guard
         #      refusing entry if someone's photo ID doesn't look at least 60% similar to them.
         #
-        # TODO 10c: If best_similarity is greater than or equal to
+        # TODO 5c: If best_similarity is greater than or equal to
         #           self.similarity_threshold, return (best_match, best_similarity).
         #           Otherwise the face is unrecognised — return (None, best_similarity).
         if best_similarity >= self.similarity_threshold:
@@ -462,7 +506,7 @@ class FaceRecognizer:
     # Database helpers — provided for you. No changes needed.
     # -----------------------------------------------------------------------
 
-    def add_face(self, name, face_image):
+    def add_face(self, name, face_image, face_coordinates=None):
         """
         Compute an embedding for face_image and store it under `name`.
 
@@ -473,7 +517,7 @@ class FaceRecognizer:
         Returns:
             bool: True if the face was added successfully.
         """
-        embedding = self.get_embedding(face_image)
+        embedding = self.get_embedding(face_image,face_coordinates)
 
         if embedding is None:
             return False
